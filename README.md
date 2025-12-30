@@ -44,6 +44,9 @@ Policy outcome equivalence assumes LSM and network policy support on the host; w
 - docs/broker-design.md
 - docs/policy-profiles.md
 - docs/policy-compiler.md
+- docs/host-requirements.md
+- docs/profile-schema.md
+- docs/profile-ci-runner.md
 - docs/deployment.md
 - docs/performance-cost.md
 - docs/benchmark-methodology.md

@@ -10,7 +10,7 @@ This document defines the policy compiler that turns a profile definition into c
 
 ## Inputs
 
-- A profile definition with syscall tiers, object access rules, and network intent.
+- A profile definition with syscall tiers, object access rules, and network intent (see `docs/profile-schema.md`).
 - Optional host capability flags (for example, LSM availability).
 
 ## Outputs
@@ -37,3 +37,9 @@ This document defines the policy compiler that turns a profile definition into c
 
 - Default: compile one binary per profile with embedded artifacts.
 - Optional: a multi-profile binary that embeds multiple profiles and requires a strict selection flag.
+
+## Related documents
+
+- `docs/host-requirements.md`
+- `docs/profile-schema.md`
+- `docs/profile-ci-runner.md`

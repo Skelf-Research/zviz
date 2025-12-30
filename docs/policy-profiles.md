@@ -26,6 +26,8 @@ Profile selection is host-controlled and not configurable from inside the contai
 - LSM: read-only rootfs, writable workspace subtree only.
 - Network: allow outbound TCP/UDP to approved CIDRs; domain allowlists require a DNS-aware policy layer or egress proxy.
 
+For a concrete example, see `docs/profile-ci-runner.md`.
+
 ## Policy verification
 
 Profiles should ship with:
