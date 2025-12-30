@@ -10,23 +10,24 @@ This repository contains the design documents that define the threat model, enfo
 - A layered policy enforcement system built from namespaces, seccomp, LSMs, and cgroups.
 - A small Zig broker that handles security-relevant syscalls via seccomp user notification.
 - A profile-driven system that produces deterministic, auditable policies.
+- Default packaging is per-profile binaries; a multi-profile binary is optional.
 
 ## What ZigViz is not
 
 - A userspace Linux kernel.
 - A full gVisor clone.
-- A microVM replacement.
+- A microVM replacement; it can integrate with external microVM runtimes in hostile-tenant mode.
 
 ## Design goals
 
-- Match gVisor-level policy outcomes without emulating Linux.
+- Match gVisor-level policy outcomes (syscall, object, network, resource) without emulating Linux.
 - Keep the trusted computing base small and auditable.
 - Preserve Linux compatibility for common workloads.
 - Provide deterministic policy outcomes and audit trails.
 
 ## Architecture in one paragraph
 
-ZigViz uses Linux namespaces and capabilities for containment, seccomp-bpf for syscall gating, LSMs (AppArmor/SELinux or Landlock) for object-level access control, and cgroups v2 for resource isolation. A small Zig broker receives seccomp user-notification events for a tight set of “brokered” syscalls (for example, `openat2` and specific `ioctl`s), applies policy, and returns results safely (preferably via file descriptors, not paths). This is how ZigViz achieves gVisor-grade enforcement outcomes without a userspace kernel.
+ZigViz uses Linux namespaces and capabilities for containment, seccomp-bpf for syscall gating, LSMs (AppArmor/SELinux or Landlock) for object-level access control, network policy (iptables/nftables or eBPF), and cgroups v2 for resource isolation. A small Zig broker receives seccomp user-notification events for a tight set of “brokered” syscalls (for example, `openat2` and specific `ioctl`s), applies policy, and returns results safely (preferably via file descriptors, not paths). This is how ZigViz achieves gVisor-grade enforcement outcomes without a userspace kernel.
 
 ## Modes
 
@@ -40,7 +41,10 @@ ZigViz uses Linux namespaces and capabilities for containment, seccomp-bpf for s
 - docs/enforcement-model.md
 - docs/broker-design.md
 - docs/policy-profiles.md
+- docs/policy-compiler.md
 - docs/deployment.md
+- docs/performance-cost.md
+- docs/benchmark-methodology.md
 
 ## Proof of equivalence strategy
 

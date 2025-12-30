@@ -13,6 +13,10 @@ gVisor’s advantage is syscall interposition via a userspace kernel. ZigViz rea
 - Policy outcomes enforced by layered kernel controls.
 - Profile-driven specialization for predictable behavior.
 
+## Cost and performance posture
+
+ZigViz targets near-native performance by mediating only security-relevant syscalls and using the host kernel networking stack. The expected result is materially higher pod density, lower per-pod memory overhead, and tighter tail latency compared to gVisor. See `docs/performance-cost.md` for quantified assumptions and targets.
+
 ## Target use cases
 
 - CI runners

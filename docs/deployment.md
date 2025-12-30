@@ -4,7 +4,7 @@ ZigViz is designed to integrate with containerd and Kubernetes as a drop-in sand
 
 ## Artifact
 
-- Static binary per platform, either per profile or multi-profile.
+- Static binary per platform per profile (default).
 - No daemon required.
 - Runs as the runtime helper per container.
 
@@ -39,12 +39,7 @@ spec:
 
 ## Profile selection
 
-Profiles are selected explicitly at deployment time. Depending on the packaging model, this is either:
-
-- a dedicated binary per profile, or
-- a multi-profile binary with a strict selection flag.
-
-Each selection maps to a concrete policy artifact set.
+Profiles are selected explicitly at deployment time by the host. The default is a dedicated binary per profile. A multi-profile binary is optional and must use a strict selection flag. Each selection maps to a concrete policy artifact set.
 
 ## Day-2 operations
 

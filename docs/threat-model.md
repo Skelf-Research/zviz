@@ -4,8 +4,8 @@ This document defines the security goals and assumptions that guide ZigViz.
 
 ## Goals
 
-- Prevent untrusted workloads from escaping their container boundary.
-- Enforce strict syscall and object-access policies.
+- Prevent policy-level escape from the defined container boundary.
+- Enforce strict syscall, object-access, and resource policies.
 - Provide deterministic auditability of policy decisions.
 
 ## Assumptions
@@ -20,6 +20,19 @@ This document defines the security goals and assumptions that guide ZigViz.
 - Use of dangerous syscalls or ioctls to expand privileges.
 - Resource exhaustion attacks within declared limits.
 
+## Definition: policy outcomes
+
+Policy outcomes are the enforceable decisions around:
+
+- which syscalls can be executed
+- which objects can be accessed (files, sockets, processes)
+- which network flows are allowed
+- which resource limits apply
+
+Policy outcomes do not include kernel exploit resistance in high-density mode.
+
+Policy outcome equivalence assumes LSM availability and network policy enforcement. Without them, object-level and network controls are reduced and do not match gVisor-level policy outcomes.
+
 ## Out-of-scope threats (high-density mode)
 
 - Active exploitation of kernel vulnerabilities to escape to the host.
@@ -28,8 +41,8 @@ This document defines the security goals and assumptions that guide ZigViz.
 ## Modes
 
 - High-density mode (default): uses layered kernel controls and a broker to enforce policy. This is intended for strong policy enforcement with near-native performance.
-- Hostile-tenant mode (optional): runs the same policy system inside a microVM boundary (KVM) to reduce kernel attack surface. This mode trades density for stronger kernel isolation.
+- Hostile-tenant mode (optional): runs the same policy system inside an external microVM boundary (KVM) to reduce kernel attack surface. This mode trades density for stronger kernel isolation.
 
 ## Security posture statement
 
-ZigViz aims to match gVisor-level policy outcomes for syscall and object access control. For kernel exploit resistance, ZigViz relies on an optional microVM boundary rather than a userspace kernel.
+ZigViz aims to match gVisor-level policy outcomes for syscall, object, and network access control. For kernel exploit resistance, ZigViz relies on an optional microVM boundary rather than a userspace kernel.

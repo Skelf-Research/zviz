@@ -1,6 +1,6 @@
 # Enforcement Model
 
-ZigViz enforces policy by composing multiple kernel mechanisms with a minimal Zig broker. The objective is deny-by-default at every layer.
+ZigViz enforces policy by composing multiple kernel mechanisms with a minimal Zig broker. The objective is deny-by-default at every layer. Policy outcomes are defined in `docs/threat-model.md`.
 
 ## Layer A: Containment
 
@@ -22,12 +22,20 @@ Seccomp answers “can you call this syscall.” LSMs answer “can you touch th
 
 - Prefer AppArmor or SELinux where available.
 - Use Landlock for unprivileged, composable filesystem restrictions when feasible.
+- LSMs are required for gVisor-level object policy outcomes; without them, object controls fall back to mount namespace and brokered syscalls only.
 
 ## Layer D: Resource control (cgroups v2)
 
 - CPU, memory, PIDs, and I/O limits.
 - Consistent OOM behavior.
 - Prevents resource-based policy bypass.
+
+## Layer E: Network policy
+
+- Namespace-level firewalling (iptables/nftables or eBPF).
+- Egress allowlists aligned to profile intent (CIDR-based in-kernel enforcement).
+- Domain allowlists require a DNS-aware policy layer or controlled egress proxy.
+- Deny raw sockets and unsafe socket options by default.
 
 ## Outcome equivalence
 

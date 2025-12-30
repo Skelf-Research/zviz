@@ -6,15 +6,17 @@ Profiles define the enforcement policy for a workload. Each profile compiles to 
 
 - Seccomp BPF program (allow/deny/broker tiers).
 - LSM policy (AppArmor/SELinux or Landlock rules).
-- Network egress/ingress rules for the namespace.
+- Network egress/ingress rules for the namespace (CIDR allowlists).
 - Broker rule tables (syscall- and argument-level allowlists).
 
 ## Profile selection
 
-Profiles are intended to be explicit and deterministic. There are two deployment patterns:
+Profiles are intended to be explicit and deterministic. The default packaging model is separate binaries per profile to minimize surface area. A multi-profile binary is optional for operational convenience.
 
-- Separate binaries per profile (smallest surface area).
-- A single binary with built-in profiles and a strict selection flag.
+- Default: separate binaries per profile (smallest surface area).
+- Optional: a single binary with built-in profiles and a strict selection flag.
+
+Profile selection is host-controlled and not configurable from inside the container.
 
 ## Example: CI runner profile (high level)
 
@@ -22,7 +24,7 @@ Profiles are intended to be explicit and deterministic. There are two deployment
 - Deny: `bpf`, `kexec`, `perf_event_open`, raw sockets, module loading.
 - Broker: `openat2`, select `ioctl`s, namespace-related syscalls.
 - LSM: read-only rootfs, writable workspace subtree only.
-- Network: allow outbound TCP/UDP to approved domains or CIDRs.
+- Network: allow outbound TCP/UDP to approved CIDRs; domain allowlists require a DNS-aware policy layer or egress proxy.
 
 ## Policy verification
 
