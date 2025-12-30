@@ -29,6 +29,8 @@ This repository contains the design documents that define the threat model, enfo
 
 ZigViz uses Linux namespaces and capabilities for containment, seccomp-bpf for syscall gating, LSMs (AppArmor/SELinux or Landlock) for object-level access control, network policy (iptables/nftables or eBPF), and cgroups v2 for resource isolation. A small Zig broker receives seccomp user-notification events for a tight set of “brokered” syscalls (for example, `openat2` and specific `ioctl`s), applies policy, and returns results safely (preferably via file descriptors, not paths). This is how ZigViz achieves gVisor-grade enforcement outcomes without a userspace kernel.
 
+Policy outcome equivalence assumes LSM and network policy support on the host; without them, scope is reduced.
+
 ## Modes
 
 - High-density mode (default): policy enforcement with kernel primitives + broker.
