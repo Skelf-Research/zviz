@@ -38,18 +38,28 @@ Policy outcome equivalence assumes LSM and network policy support on the host; w
 
 ## Documents
 
-- docs/overview.md
-- docs/threat-model.md
-- docs/enforcement-model.md
-- docs/broker-design.md
-- docs/policy-profiles.md
-- docs/policy-compiler.md
-- docs/host-requirements.md
-- docs/profile-schema.md
-- docs/profile-ci-runner.md
-- docs/deployment.md
-- docs/performance-cost.md
-- docs/benchmark-methodology.md
+**Start here:**
+- docs/overview.md — Project goals and architecture
+- docs/roadmap.md — Implementation phases and success criteria
+
+**Design:**
+- docs/threat-model.md — Security goals and assumptions
+- docs/enforcement-model.md — Five-layer enforcement architecture
+- docs/broker-design.md — Zig broker design
+
+**Policy system:**
+- docs/policy-profiles.md — Profile concepts
+- docs/policy-compiler.md — Compiler specification
+- docs/profile-schema.md — Profile YAML schema reference
+- docs/profile-ci-runner.md — Concrete CI runner profile
+
+**Operations:**
+- docs/host-requirements.md — Required kernel capabilities
+- docs/deployment.md — containerd/Kubernetes integration
+
+**Validation:**
+- docs/performance-cost.md — Performance targets and cost comparison
+- docs/benchmark-methodology.md — Testing methodology
 
 ## Proof of equivalence strategy
 
@@ -63,4 +73,4 @@ ZigViz will earn trust by shipping concrete artifacts:
 
 ## Status
 
-Design in progress. Contributions and critique are welcome.
+Design complete. Implementation roadmap defined in `docs/roadmap.md`. Contributions and critique are welcome.

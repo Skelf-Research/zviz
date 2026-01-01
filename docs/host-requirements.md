@@ -24,3 +24,9 @@ This document defines the minimum host capabilities required to achieve gVisor-l
 ## Profile gating
 
 Profiles declare required host capabilities. The policy compiler fails closed if requirements are not met and can emit a compatibility report for degraded environments.
+
+## Related documents
+
+- `docs/enforcement-model.md` — How each host capability maps to an enforcement layer
+- `docs/profile-schema.md` — How to declare requirements in profiles
+- `docs/policy-compiler.md` — Compiler behavior when requirements are not met

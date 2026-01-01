@@ -168,3 +168,9 @@ audit:
 
 - The syscall list is a starting point and will evolve based on real workload traces.
 - Some build tools may require additional syscalls (for example, `statx` or `getrandom`). These should be added via profile updates, not ad-hoc runtime changes.
+
+## Related documents
+
+- `docs/profile-schema.md` — Full schema reference with all field options
+- `docs/policy-compiler.md` — How this profile is compiled to enforcement artifacts
+- `docs/broker-design.md` — Details on brokered syscall mediation

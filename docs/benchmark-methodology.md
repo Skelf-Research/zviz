@@ -65,3 +65,9 @@ Profiles:
 - ZigViz memory overhead <= 3 MB per pod.
 - ZigViz p99 latency <= gVisor p99 for the same workload.
 - Policy outcomes match or exceed the defined policy scope.
+
+## Related documents
+
+- `docs/performance-cost.md` — Customer-facing performance comparison
+- `docs/profile-ci-runner.md` — CI runner profile for benchmark workloads
+- `docs/threat-model.md` — Policy outcome definitions for validation

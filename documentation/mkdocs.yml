@@ -1,0 +1,138 @@
+site_name: ZigViz Documentation
+site_description: High-performance container isolation runtime with gVisor-grade security
+site_author: ZigViz Contributors
+site_url: https://zigviz.io/docs
+
+repo_name: zigviz/zigviz
+repo_url: https://github.com/zigviz/zigviz
+edit_uri: edit/main/documentation/docs/
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+  icon:
+    repo: fontawesome/brands/github
+  logo: assets/logo.svg
+  favicon: assets/favicon.ico
+
+plugins:
+  - search
+  - tags
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.betterem:
+      smart_enable: all
+  - pymdownx.caret
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/zigviz/zigviz
+  version:
+    provider: mike
+  analytics:
+    provider: google
+    property: G-XXXXXXXXXX
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Introduction: getting-started/index.md
+    - Installation: getting-started/installation.md
+    - Quick Start: getting-started/quickstart.md
+    - First Container: getting-started/first-container.md
+  - User Guide:
+    - Overview: user-guide/index.md
+    - Profiles: user-guide/profiles.md
+    - Profile Authoring: user-guide/profile-authoring.md
+    - Built-in Profiles: user-guide/builtin-profiles.md
+    - CLI Reference: user-guide/cli-reference.md
+    - Troubleshooting: user-guide/troubleshooting.md
+  - Operator Guide:
+    - Overview: operator-guide/index.md
+    - Kubernetes Integration: operator-guide/kubernetes.md
+    - containerd Setup: operator-guide/containerd.md
+    - Monitoring: operator-guide/monitoring.md
+    - Performance Tuning: operator-guide/performance.md
+    - Debugging: operator-guide/debugging.md
+    - Upgrades: operator-guide/upgrades.md
+  - Architecture:
+    - Overview: architecture/index.md
+    - Enforcement Model: architecture/enforcement-model.md
+    - Broker Design: architecture/broker-design.md
+    - Threat Model: architecture/threat-model.md
+    - Performance: architecture/performance.md
+  - Security:
+    - Security Policy: security/index.md
+    - Reporting Vulnerabilities: security/reporting.md
+    - Security Advisories: security/advisories.md
+    - Hardening Guide: security/hardening.md
+  - Reference:
+    - Profile Schema: reference/profile-schema.md
+    - Configuration: reference/configuration.md
+    - Metrics: reference/metrics.md
+    - Error Codes: reference/error-codes.md
+  - Contributing:
+    - How to Contribute: contributing/index.md
+    - Development Setup: contributing/development.md
+    - Code Style: contributing/code-style.md
+    - Testing: contributing/testing.md
+    - Release Process: contributing/releases.md

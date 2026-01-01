@@ -46,3 +46,9 @@ Policy outcome equivalence assumes LSM availability and network policy enforceme
 ## Security posture statement
 
 ZigViz aims to match gVisor-level policy outcomes for syscall, object, and network access control. For kernel exploit resistance, ZigViz relies on an optional microVM boundary rather than a userspace kernel.
+
+## Related documents
+
+- `docs/enforcement-model.md` — How policy outcomes are enforced at each layer
+- `docs/broker-design.md` — Broker architecture and TOCTOU resistance
+- `docs/host-requirements.md` — Required host capabilities for policy equivalence

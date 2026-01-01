@@ -1,0 +1,46 @@
+# ZigViz Kubernetes RuntimeClass
+#
+# This RuntimeClass allows pods to opt-in to the ZigViz sandbox runtime.
+# Apply with: kubectl apply -f runtime-class.yaml
+#
+# Prerequisites:
+# - ZigViz binary installed at /usr/local/bin/zigviz on all nodes
+# - containerd configured with ZigViz runtime (see deploy/containerd/config.toml)
+# - containerd restarted after configuration change
+
+---
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: zigviz
+  labels:
+    app.kubernetes.io/name: zigviz
+    app.kubernetes.io/component: runtime
+# The handler must match the runtime name in containerd config
+# [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.zigviz]
+handler: zigviz
+
+# Optional: Node scheduling constraints
+# Uncomment to only schedule zigviz pods on nodes with the runtime installed
+# scheduling:
+#   nodeSelector:
+#     zigviz.io/runtime: "true"
+
+# Optional: Pod overhead for resource accounting
+# This accounts for the additional resources used by the sandbox
+# overhead:
+#   podFixed:
+#     memory: "32Mi"
+#     cpu: "50m"
+
+---
+# Strict profile variant
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: zigviz-strict
+  labels:
+    app.kubernetes.io/name: zigviz
+    app.kubernetes.io/component: runtime
+    zigviz.io/profile: strict
+handler: zigviz-strict

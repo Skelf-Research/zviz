@@ -1,0 +1,40 @@
+# ZigViz containerd runtime configuration
+#
+# Add this to your containerd config.toml to enable ZigViz as a runtime option.
+# The default location for containerd config is /etc/containerd/config.toml
+#
+# After adding this configuration, restart containerd:
+#   systemctl restart containerd
+
+# Runtime handler for ZigViz
+# This integrates with containerd's CRI plugin for Kubernetes support
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.zigviz]
+  # Use the standard runc v2 shim interface
+  # ZigViz is called as the runtime binary, not as a custom shim
+  runtime_type = "io.containerd.runc.v2"
+
+  # Don't allow privileged containers to bypass host device restrictions
+  privileged_without_host_devices = false
+
+  [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.zigviz.options]
+    # Path to the ZigViz binary
+    BinaryName = "/usr/local/bin/zigviz"
+
+    # Optional: Specify the root directory for container state
+    # Root = "/run/zigviz"
+
+    # Enable systemd cgroup driver (recommended for Kubernetes)
+    SystemdCgroup = true
+
+# Alternative: Runtime handler with specific profile
+# Use this if you want different profiles for different workloads
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.zigviz-strict]
+  runtime_type = "io.containerd.runc.v2"
+  privileged_without_host_devices = false
+
+  [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.zigviz-strict.options]
+    BinaryName = "/usr/local/bin/zigviz"
+    SystemdCgroup = true
+
+    # Pod annotations can be used to select profiles
+    # See deploy/kubernetes/pod-with-profile.yaml for usage

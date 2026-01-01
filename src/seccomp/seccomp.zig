@@ -1,0 +1,384 @@
+const std = @import("std");
+const log = @import("../log.zig");
+const errors = @import("../errors.zig");
+const linux = @import("../syscalls/linux.zig");
+
+/// Seccomp actions
+pub const Action = enum(u32) {
+    kill_process = 0x80000000,
+    kill_thread = 0x00000000,
+    trap = 0x00030000,
+    errno = 0x00050000,
+    user_notif = 0x7fc00000, // SECCOMP_RET_USER_NOTIF
+    trace = 0x7ff00000,
+    log = 0x7ffc0000,
+    allow = 0x7fff0000,
+
+    pub fn withErrno(errno: u16) u32 {
+        return 0x00050000 | @as(u32, errno);
+    }
+};
+
+/// Seccomp comparison operations
+pub const Op = enum(u8) {
+    ne = 0,
+    lt = 1,
+    le = 2,
+    eq = 3,
+    ge = 4,
+    gt = 5,
+    masked_eq = 6,
+};
+
+/// BPF instruction
+pub const BpfInsn = extern struct {
+    code: u16,
+    jt: u8,
+    jf: u8,
+    k: u32,
+};
+
+/// BPF instruction codes
+const BPF = struct {
+    // Instruction classes
+    const LD = 0x00;
+    const LDX = 0x01;
+    const ST = 0x02;
+    const STX = 0x03;
+    const ALU = 0x04;
+    const JMP = 0x05;
+    const RET = 0x06;
+    const MISC = 0x07;
+
+    // LD/LDX fields
+    const W = 0x00; // Word (32-bit)
+    const H = 0x08; // Halfword (16-bit)
+    const B = 0x10; // Byte
+
+    // LD/LDX source
+    const IMM = 0x00; // Immediate
+    const ABS = 0x20; // Absolute offset
+    const IND = 0x40; // Indirect offset
+    const MEM = 0x60; // Memory
+
+    // JMP codes
+    const JA = 0x00;
+    const JEQ = 0x10;
+    const JGT = 0x20;
+    const JGE = 0x30;
+    const JSET = 0x40;
+
+    // Source for JMP/ALU
+    const K = 0x00; // Use k
+    const X = 0x08; // Use X register
+
+    // Architecture (x86_64)
+    const AUDIT_ARCH_X86_64 = 0xc000003e;
+
+    // seccomp_data offsets
+    const OFFSET_NR = 0; // Syscall number
+    const OFFSET_ARCH = 4; // Architecture
+    const OFFSET_INSTRUCTION_POINTER = 8;
+    const OFFSET_ARGS = 16; // args[0]
+};
+
+/// BPF program (for seccomp)
+pub const BpfProg = extern struct {
+    len: c_ushort,
+    filter: [*]const BpfInsn,
+};
+
+/// Syscall policy tiers
+pub const SyscallPolicy = struct {
+    /// Fast-path allowed syscalls (no mediation)
+    allow: []const i32,
+    /// Hard-denied syscalls (always blocked)
+    deny: []const i32,
+    /// Routed to broker via USER_NOTIF
+    broker: []const i32,
+
+    pub fn lookup(self: SyscallPolicy, syscall_nr: i32) Action {
+        for (self.allow) |nr| {
+            if (nr == syscall_nr) return .allow;
+        }
+        for (self.deny) |nr| {
+            if (nr == syscall_nr) return .errno; // EPERM
+        }
+        for (self.broker) |nr| {
+            if (nr == syscall_nr) return .user_notif;
+        }
+        // Default deny
+        return .errno;
+    }
+};
+
+/// BPF instruction builder helper
+const BpfBuilder = struct {
+    insns: std.ArrayList(BpfInsn),
+    allocator: std.mem.Allocator,
+
+    fn init(allocator: std.mem.Allocator) BpfBuilder {
+        return .{
+            .insns = .{},
+            .allocator = allocator,
+        };
+    }
+
+    fn deinit(self: *BpfBuilder) void {
+        self.insns.deinit(self.allocator);
+    }
+
+    fn len(self: *const BpfBuilder) usize {
+        return self.insns.items.len;
+    }
+
+    /// Load word from seccomp_data at absolute offset
+    fn ldAbsW(self: *BpfBuilder, offset: u32) !void {
+        try self.insns.append(self.allocator, .{
+            .code = BPF.LD | BPF.W | BPF.ABS,
+            .jt = 0,
+            .jf = 0,
+            .k = offset,
+        });
+    }
+
+    /// Jump if equal to immediate value
+    fn jeqK(self: *BpfBuilder, k: u32, jt: u8, jf: u8) !void {
+        try self.insns.append(self.allocator, .{
+            .code = BPF.JMP | BPF.JEQ | BPF.K,
+            .jt = jt,
+            .jf = jf,
+            .k = k,
+        });
+    }
+
+    /// Unconditional jump
+    fn ja(self: *BpfBuilder, k: u32) !void {
+        try self.insns.append(self.allocator, .{
+            .code = BPF.JMP | BPF.JA,
+            .jt = 0,
+            .jf = 0,
+            .k = k,
+        });
+    }
+
+    /// Return with immediate value
+    fn retK(self: *BpfBuilder, k: u32) !void {
+        try self.insns.append(self.allocator, .{
+            .code = BPF.RET | BPF.K,
+            .jt = 0,
+            .jf = 0,
+            .k = k,
+        });
+    }
+
+    fn toOwnedSlice(self: *BpfBuilder) ![]BpfInsn {
+        return self.insns.toOwnedSlice(self.allocator);
+    }
+};
+
+/// Generate BPF program from syscall policy
+pub fn generateBpf(allocator: std.mem.Allocator, policy: SyscallPolicy) ![]BpfInsn {
+    log.debug("Generating BPF: {d} allow, {d} deny, {d} broker", .{
+        policy.allow.len,
+        policy.deny.len,
+        policy.broker.len,
+    });
+
+    var builder = BpfBuilder.init(allocator);
+    errdefer builder.deinit();
+
+    // Calculate jump offsets for the end returns
+    // Structure:
+    // [0] Load arch
+    // [1] Check arch, fail if not x86_64
+    // [2] Load syscall nr
+    // [3..3+allow.len] Check allow list
+    // [3+allow.len..3+allow.len+deny.len] Check deny list
+    // [3+allow.len+deny.len..3+allow.len+deny.len+broker.len] Check broker list
+    // [end-3] RET ALLOW (for allow matches)
+    // [end-2] RET USER_NOTIF (for broker matches)
+    // [end-1] RET ERRNO (for deny/default)
+
+    const allow_count = policy.allow.len;
+    const deny_count = policy.deny.len;
+    const broker_count = policy.broker.len;
+
+    // Load architecture
+    try builder.ldAbsW(BPF.OFFSET_ARCH);
+
+    // Check architecture (kill if not x86_64)
+    // If not equal, jump to kill; otherwise continue
+    const total_checks = allow_count + deny_count + broker_count;
+    const kill_offset: u8 = @intCast(1 + total_checks + 3); // Skip all checks + 3 return instructions
+    try builder.jeqK(BPF.AUDIT_ARCH_X86_64, 0, kill_offset);
+
+    // Load syscall number
+    try builder.ldAbsW(BPF.OFFSET_NR);
+
+    // Generate allow list checks
+    // For each syscall in allow list: if match, jump to RET ALLOW
+    for (policy.allow, 0..) |syscall_nr, i| {
+        const remaining = total_checks - i - 1;
+        const allow_ret_offset: u8 = @intCast(remaining + 1); // Jump to RET ALLOW
+        try builder.jeqK(@intCast(syscall_nr), allow_ret_offset, 0);
+    }
+
+    // Generate deny list checks
+    // For each syscall in deny list: if match, jump to RET ERRNO
+    for (policy.deny, 0..) |syscall_nr, i| {
+        const remaining = total_checks - allow_count - i - 1;
+        const deny_ret_offset: u8 = @intCast(remaining + 3); // Jump to RET ERRNO (past ALLOW and USER_NOTIF)
+        try builder.jeqK(@intCast(syscall_nr), deny_ret_offset, 0);
+    }
+
+    // Generate broker list checks
+    // For each syscall in broker list: if match, jump to RET USER_NOTIF
+    for (policy.broker, 0..) |syscall_nr, i| {
+        const remaining = total_checks - allow_count - deny_count - i - 1;
+        const broker_ret_offset: u8 = @intCast(remaining + 2); // Jump to RET USER_NOTIF (past ALLOW)
+        try builder.jeqK(@intCast(syscall_nr), broker_ret_offset, 0);
+    }
+
+    // Return instructions at the end
+    // RET ALLOW
+    try builder.retK(@intFromEnum(Action.allow));
+
+    // RET USER_NOTIF
+    try builder.retK(@intFromEnum(Action.user_notif));
+
+    // RET ERRNO (EPERM = 1) - default for unmatched and denied
+    try builder.retK(Action.withErrno(1));
+
+    // RET KILL (for architecture mismatch)
+    try builder.retK(@intFromEnum(Action.kill_process));
+
+    return builder.toOwnedSlice();
+}
+
+/// Load seccomp filter for the current process (without notification)
+pub fn loadFilter(bpf: []const BpfInsn) !void {
+    log.info("Loading seccomp filter with {d} instructions", .{bpf.len});
+
+    const prog = BpfProg{
+        .len = @intCast(bpf.len),
+        .filter = bpf.ptr,
+    };
+
+    // First, set PR_SET_NO_NEW_PRIVS (required for unprivileged seccomp)
+    const nnp_result = std.os.linux.prctl(@intFromEnum(std.os.linux.PR.SET_NO_NEW_PRIVS), 1, 0, 0, 0);
+    if (nnp_result != 0) {
+        log.err("Failed to set NO_NEW_PRIVS: {d}", .{nnp_result});
+        return errors.Error.SeccompLoadFailed;
+    }
+
+    // Load the filter using prctl
+    const result = std.os.linux.prctl(@intFromEnum(std.os.linux.PR.SET_SECCOMP), linux.SECCOMP.MODE_FILTER, @intFromPtr(&prog), 0, 0);
+    if (result != 0) {
+        log.err("Failed to load seccomp filter: {d}", .{result});
+        return errors.Error.SeccompLoadFailed;
+    }
+
+    log.info("Seccomp filter loaded successfully", .{});
+}
+
+/// Load filter and get notification fd for broker
+pub fn loadFilterWithNotify(bpf: []const BpfInsn) !std.posix.fd_t {
+    log.info("Loading seccomp filter with notify fd ({d} instructions)", .{bpf.len});
+
+    const prog = BpfProg{
+        .len = @intCast(bpf.len),
+        .filter = bpf.ptr,
+    };
+
+    // First, set PR_SET_NO_NEW_PRIVS (required for unprivileged seccomp)
+    const nnp_result = std.os.linux.prctl(@intFromEnum(std.os.linux.PR.SET_NO_NEW_PRIVS), 1, 0, 0, 0);
+    if (nnp_result != 0) {
+        log.err("Failed to set NO_NEW_PRIVS: {d}", .{nnp_result});
+        return errors.Error.SeccompLoadFailed;
+    }
+
+    // Use seccomp syscall with SECCOMP_FILTER_FLAG_NEW_LISTENER
+    const flags = linux.SECCOMP.FILTER_FLAG_NEW_LISTENER;
+    const result = std.os.linux.syscall3(
+        .seccomp,
+        linux.SECCOMP.SET_MODE_FILTER,
+        flags,
+        @intFromPtr(&prog),
+    );
+
+    const signed_result: isize = @bitCast(result);
+    if (signed_result < 0) {
+        log.err("Failed to load seccomp filter with notify: {d}", .{signed_result});
+        return errors.Error.SeccompNotifyFailed;
+    }
+
+    const notify_fd: std.posix.fd_t = @intCast(result);
+    log.info("Seccomp filter loaded, notify_fd={d}", .{notify_fd});
+    return notify_fd;
+}
+
+/// Validate notification ID is still valid (process hasn't died/been killed)
+pub fn validateNotifId(notify_fd: std.posix.fd_t, id: u64) bool {
+    var id_copy = id;
+    const result = std.os.linux.ioctl(notify_fd, linux.SECCOMP.IOCTL_NOTIF_ID_VALID, @intFromPtr(&id_copy));
+    return result == 0;
+}
+
+/// Common syscall numbers (x86_64)
+pub const Syscall = struct {
+    pub const read = 0;
+    pub const write = 1;
+    pub const open = 2;
+    pub const close = 3;
+    pub const stat = 4;
+    pub const fstat = 5;
+    pub const lstat = 6;
+    pub const poll = 7;
+    pub const lseek = 8;
+    pub const mmap = 9;
+    pub const mprotect = 10;
+    pub const munmap = 11;
+    pub const brk = 12;
+    pub const ioctl = 16;
+    pub const socket = 41;
+    pub const clone = 56;
+    pub const fork = 57;
+    pub const execve = 59;
+    pub const exit = 60;
+    pub const openat = 257;
+    pub const openat2 = 437;
+    pub const clone3 = 435;
+
+    // Dangerous syscalls
+    pub const ptrace = 101;
+    pub const mount = 165;
+    pub const umount2 = 166;
+    pub const kexec_load = 246;
+    pub const perf_event_open = 298;
+    pub const bpf = 321;
+    pub const userfaultfd = 323;
+};
+
+test "syscall policy lookup" {
+    const policy = SyscallPolicy{
+        .allow = &.{ Syscall.read, Syscall.write },
+        .deny = &.{ Syscall.ptrace, Syscall.bpf },
+        .broker = &.{ Syscall.openat, Syscall.ioctl },
+    };
+
+    try std.testing.expectEqual(Action.allow, policy.lookup(Syscall.read));
+    try std.testing.expectEqual(Action.user_notif, policy.lookup(Syscall.openat));
+}
+
+test "bpf generation" {
+    const policy = SyscallPolicy{
+        .allow = &.{Syscall.read},
+        .deny = &.{Syscall.ptrace},
+        .broker = &.{Syscall.openat},
+    };
+
+    const bpf = try generateBpf(std.testing.allocator, policy);
+    defer std.testing.allocator.free(bpf);
+    try std.testing.expect(bpf.len > 0);
+}

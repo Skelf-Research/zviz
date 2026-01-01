@@ -20,13 +20,13 @@ Profile selection is host-controlled and not configurable from inside the contai
 
 ## Example: CI runner profile (high level)
 
-- Allow: `read`, `write`, `futex`, `clock_gettime`, `epoll`, `mmap`.
-- Deny: `bpf`, `kexec`, `perf_event_open`, raw sockets, module loading.
-- Broker: `openat2`, select `ioctl`s, namespace-related syscalls.
+- Allow: `read`, `write`, `futex`, `clock_gettime`, `epoll_*`, `mmap`, and other safe high-frequency syscalls.
+- Deny: `bpf`, `kexec_load`, `perf_event_open`, raw sockets, module loading.
+- Broker: `openat`/`openat2`, `ioctl`, `socket`, `clone`/`clone3`, `execve`, `prctl`.
 - LSM: read-only rootfs, writable workspace subtree only.
 - Network: allow outbound TCP/UDP to approved CIDRs; domain allowlists require a DNS-aware policy layer or egress proxy.
 
-For a concrete example, see `docs/profile-ci-runner.md`.
+For the complete profile definition, see `docs/profile-ci-runner.md`.
 
 ## Policy verification
 
@@ -35,3 +35,10 @@ Profiles should ship with:
 - Rendered policy artifacts for inspection.
 - A machine-readable manifest linking rules to policy intent.
 - A small conformance test suite for each profile.
+
+## Related documents
+
+- `docs/profile-schema.md` — Full schema reference for profile definitions
+- `docs/profile-ci-runner.md` — Complete CI runner profile example
+- `docs/policy-compiler.md` — How profiles are compiled to enforcement artifacts
+- `docs/host-requirements.md` — Required host capabilities for profile execution

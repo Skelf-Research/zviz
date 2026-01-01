@@ -120,3 +120,9 @@ gVisor runs a userspace TCP/IP stack. ZigViz uses the host kernel networking sta
 - Choose a benchmark suite (CI builds are a good starting point).
 - Define measurement methodology and success criteria in `docs/benchmark-methodology.md`.
 - Publish side-by-side results: runc vs gVisor vs ZigViz.
+
+## Related documents
+
+- `docs/benchmark-methodology.md` — Detailed testing methodology and success criteria
+- `docs/overview.md` — Performance posture and design rationale
+- `docs/deployment.md` — Operational metrics and monitoring

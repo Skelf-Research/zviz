@@ -1,0 +1,108 @@
+# Pod with ZigViz profile selection via annotations
+#
+# ZigViz supports profile selection through pod annotations.
+# This allows fine-grained control over security policies per workload.
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ci-runner-pod
+  labels:
+    app: ci-runner
+  annotations:
+    # Select the ci-runner profile for this workload
+    zigviz.io/profile: "ci-runner"
+
+    # Optional: Enable audit logging for this pod
+    zigviz.io/audit: "true"
+
+    # Optional: Set broker timeout (milliseconds)
+    zigviz.io/broker-timeout: "200"
+
+spec:
+  runtimeClassName: zigviz
+
+  containers:
+  - name: ci-runner
+    image: docker.io/library/golang:1.21-alpine
+    command:
+    - sh
+    - -c
+    - |
+      echo "CI Runner starting..."
+      go version
+      # Your CI commands here
+      sleep 300
+
+    workingDir: /workspace
+
+    resources:
+      limits:
+        memory: "512Mi"
+        cpu: "500m"
+      requests:
+        memory: "256Mi"
+        cpu: "100m"
+
+    volumeMounts:
+    - name: workspace
+      mountPath: /workspace
+
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: false  # CI often needs to write
+      capabilities:
+        drop:
+          - ALL
+
+  volumes:
+  - name: workspace
+    emptyDir: {}
+
+  restartPolicy: Never
+
+---
+# High-security workload with hostile-tenant profile
+apiVersion: v1
+kind: Pod
+metadata:
+  name: secure-workload
+  labels:
+    app: secure-workload
+  annotations:
+    # Use the strictest profile for untrusted code
+    zigviz.io/profile: "hostile-tenant"
+
+    # Enable all security features
+    zigviz.io/audit: "true"
+    zigviz.io/strict-mode: "true"
+
+spec:
+  runtimeClassName: zigviz
+
+  containers:
+  - name: sandbox
+    image: alpine:latest
+    command: ["sh", "-c", "echo 'Secure sandbox running' && sleep 3600"]
+
+    resources:
+      limits:
+        memory: "256Mi"
+        cpu: "200m"
+
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 65534  # nobody
+      runAsGroup: 65534
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      seccompProfile:
+        type: RuntimeDefault
+      capabilities:
+        drop:
+          - ALL
+
+  restartPolicy: Never

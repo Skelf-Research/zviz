@@ -1,0 +1,63 @@
+# Example pod using ZigViz runtime
+#
+# This pod runs in the ZigViz sandbox with default security profile.
+# Apply with: kubectl apply -f example-pod.yaml
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: zigviz-example
+  labels:
+    app: zigviz-example
+spec:
+  # Use the ZigViz runtime class
+  runtimeClassName: zigviz
+
+  containers:
+  - name: app
+    image: alpine:latest
+    command: ["sh", "-c", "echo 'Running in ZigViz sandbox!' && sleep 3600"]
+    resources:
+      limits:
+        memory: "128Mi"
+        cpu: "100m"
+      requests:
+        memory: "64Mi"
+        cpu: "50m"
+
+    # Security context (additional restrictions)
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop:
+          - ALL
+
+  # Don't restart on failure (for demo purposes)
+  restartPolicy: Never
+
+---
+# Example with strict profile
+apiVersion: v1
+kind: Pod
+metadata:
+  name: zigviz-strict-example
+  labels:
+    app: zigviz-strict-example
+spec:
+  runtimeClassName: zigviz-strict
+
+  containers:
+  - name: app
+    image: alpine:latest
+    command: ["sh", "-c", "echo 'Running in strict ZigViz sandbox!' && sleep 3600"]
+    resources:
+      limits:
+        memory: "128Mi"
+        cpu: "100m"
+
+  restartPolicy: Never
