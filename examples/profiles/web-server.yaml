@@ -1,0 +1,277 @@
+# Web Server Security Profile
+#
+# This profile is designed for web servers (nginx, apache, etc).
+# It allows network binding and serving files while blocking
+# file system writes and dangerous syscalls.
+#
+# Usage:
+#   zigviz compile profiles/web-server.yaml
+#   # Then use via annotation: zigviz.io/profile: "web-server"
+
+name: web-server
+version: "1.0"
+description: Security profile for web server workloads
+
+# Default action - more restrictive than CI runner
+default_action: block
+
+# Explicitly allowed syscalls
+allowed_syscalls:
+  # Basic operations
+  - read
+  - write
+  - close
+  - fstat
+  - lstat
+  - poll
+  - lseek
+  - mmap
+  - mprotect
+  - munmap
+  - brk
+  - pread64
+  - pwrite64
+  - readv
+  - writev
+
+  # File operations (read-only)
+  - openat
+  - stat
+  - access
+  - getdents
+  - getdents64
+  - readlink
+  - readlinkat
+  - newfstatat
+
+  # Process operations
+  - rt_sigaction
+  - rt_sigprocmask
+  - rt_sigreturn
+  - ioctl
+  - nanosleep
+  - clock_nanosleep
+  - getpid
+  - getuid
+  - getgid
+  - geteuid
+  - getegid
+  - getppid
+  - getpgrp
+  - setsid
+  - setpgid
+  - getgroups
+  - setgroups
+  - gettid
+  - futex
+  - set_tid_address
+  - clock_gettime
+  - clock_getres
+  - exit_group
+  - exit
+  - set_robust_list
+  - get_robust_list
+  - prctl
+  - arch_prctl
+  - getrandom
+  - rseq
+
+  # Network operations (essential for web server)
+  - socket
+  - bind
+  - listen
+  - accept
+  - accept4
+  - connect
+  - sendto
+  - recvfrom
+  - sendmsg
+  - recvmsg
+  - shutdown
+  - getsockname
+  - getpeername
+  - setsockopt
+  - getsockopt
+  - epoll_create
+  - epoll_create1
+  - epoll_ctl
+  - epoll_wait
+  - epoll_pwait
+  - eventfd
+  - eventfd2
+
+  # Memory/threading
+  - clone
+  - clone3
+  - wait4
+  - waitid
+  - madvise
+  - mremap
+  - msync
+  - mincore
+  - sched_yield
+  - sched_getaffinity
+  - sched_setaffinity
+
+  # File descriptor operations
+  - dup
+  - dup2
+  - dup3
+  - pipe
+  - pipe2
+  - fcntl
+  - flock
+
+# Syscalls to explicitly block
+blocked_syscalls:
+  # All the dangerous ones from ci-runner, plus:
+  - init_module
+  - finit_module
+  - delete_module
+  - iopl
+  - ioperm
+  - setns
+  - unshare
+  - mount
+  - umount
+  - umount2
+  - pivot_root
+  - capset
+  - reboot
+  - kexec_load
+  - kexec_file_load
+  - keyctl
+  - add_key
+  - request_key
+  - bpf
+  - perf_event_open
+  - ptrace
+  - process_vm_readv
+  - process_vm_writev
+  - clock_settime
+  - settimeofday
+  - adjtimex
+  - swapon
+  - swapoff
+  - acct
+
+  # Additional restrictions for web servers
+  - execve      # No spawning processes
+  - execveat
+  - fork        # No forking (use pre-fork model)
+  - vfork
+  - chmod       # No permission changes
+  - fchmod
+  - fchmodat
+  - chown       # No ownership changes
+  - fchown
+  - fchownat
+  - link        # No hard links
+  - linkat
+  - symlink     # No symlinks
+  - symlinkat
+  - rename      # No renames
+  - renameat
+  - renameat2
+  - unlink      # No deletions
+  - unlinkat
+  - rmdir
+  - mkdir       # No directory creation
+  - mkdirat
+  - mknod
+  - mknodat
+
+# Mediated syscalls - handled by broker
+mediated_syscalls:
+  # Allow opening files only from specific paths
+  - name: openat
+    conditions:
+      # Web content
+      - path_prefix: /usr/share/nginx/html
+        flags: O_RDONLY
+      - path_prefix: /var/www
+        flags: O_RDONLY
+      # Config files
+      - path_prefix: /etc/nginx
+        flags: O_RDONLY
+      # Libraries
+      - path_prefix: /usr/lib
+        flags: O_RDONLY
+      - path_prefix: /lib
+        flags: O_RDONLY
+      # Cache and runtime (writable)
+      - path_prefix: /var/cache/nginx
+      - path_prefix: /var/run
+      - path_prefix: /tmp
+    action: allow
+
+# Network policy
+network:
+  # Allow binding to HTTP/HTTPS ports
+  allow_bind:
+    - "0.0.0.0:80"
+    - "0.0.0.0:443"
+    - "0.0.0.0:8080"
+    - "0.0.0.0:8443"
+    - "[::]:80"
+    - "[::]:443"
+
+  # Allow accepting connections
+  allow_inbound: true
+
+  # Restrict outbound (backend connections only)
+  allow_outbound:
+    - "127.0.0.1:*"     # Localhost backends
+    - "10.0.0.0/8:*"    # Internal network
+    - "172.16.0.0/12:*" # Docker network
+    - "192.168.0.0/16:*" # Private network
+
+  # Allow DNS for name resolution
+  allow_dns: true
+
+# Resource limits
+limits:
+  max_processes: 64
+  max_open_files: 65536
+  max_memory_mb: 512
+  max_cpu_percent: 80
+  max_connections: 10000
+
+# Filesystem restrictions
+filesystem:
+  # Everything is read-only except cache
+  readonly:
+    - /
+
+  # Only these paths can be written
+  writable:
+    - /var/cache/nginx
+    - /var/run
+    - /tmp
+
+  # Hidden paths
+  hidden:
+    - /etc/shadow
+    - /etc/gshadow
+    - /root
+    - /home
+
+# Capabilities
+capabilities:
+  drop:
+    - ALL
+  keep:
+    - CAP_NET_BIND_SERVICE  # Bind to ports < 1024
+    - CAP_SETUID           # Switch to worker user
+    - CAP_SETGID
+
+# Audit settings
+audit:
+  log_blocked: true
+  log_mediated: false
+  log_path: /var/log/zigviz/web-server.log
+
+  # Rate limit logging to prevent log flooding from attacks
+  rate_limit:
+    max_per_second: 100
+    burst: 1000

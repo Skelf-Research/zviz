@@ -1,0 +1,234 @@
+# Multi-tenant Namespace Setup with ZigViz
+#
+# This example creates a complete tenant namespace with:
+# - Resource quotas
+# - Network policies
+# - RBAC for tenant admins
+# - ZigViz defaults
+#
+# Usage:
+#   # Create for a new tenant
+#   TENANT=acme ./create-tenant.sh
+#
+#   # Or manually:
+#   kubectl apply -f tenant-namespace.yaml
+
+---
+# Namespace for the tenant
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tenant-acme  # Replace with tenant name
+  labels:
+    tenant: acme
+    zigviz.io/enabled: "true"
+  annotations:
+    # Default ZigViz profile for all pods in namespace
+    zigviz.io/default-profile: "hostile-tenant"
+    zigviz.io/audit: "true"
+
+---
+# ResourceQuota limits tenant resources
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: tenant-quota
+  namespace: tenant-acme
+spec:
+  hard:
+    # Compute limits
+    requests.cpu: "4"
+    requests.memory: 8Gi
+    limits.cpu: "8"
+    limits.memory: 16Gi
+
+    # Object count limits
+    pods: "20"
+    services: "10"
+    secrets: "20"
+    configmaps: "20"
+    persistentvolumeclaims: "5"
+
+    # Storage limits
+    requests.storage: 50Gi
+
+---
+# LimitRange sets defaults and constraints
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: tenant-limits
+  namespace: tenant-acme
+spec:
+  limits:
+  # Container defaults
+  - type: Container
+    default:
+      cpu: "200m"
+      memory: "256Mi"
+    defaultRequest:
+      cpu: "100m"
+      memory: "128Mi"
+    max:
+      cpu: "2"
+      memory: "4Gi"
+    min:
+      cpu: "50m"
+      memory: "64Mi"
+
+  # Pod limits
+  - type: Pod
+    max:
+      cpu: "4"
+      memory: "8Gi"
+
+  # PVC limits
+  - type: PersistentVolumeClaim
+    max:
+      storage: 20Gi
+    min:
+      storage: 1Gi
+
+---
+# NetworkPolicy - default deny all
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: tenant-acme
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+
+---
+# NetworkPolicy - allow DNS
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: tenant-acme
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+    ports:
+    - protocol: UDP
+      port: 53
+
+---
+# NetworkPolicy - allow intra-namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-same-namespace
+  namespace: tenant-acme
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector: {}
+  egress:
+  - to:
+    - podSelector: {}
+
+---
+# ServiceAccount for tenant workloads
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tenant-workload
+  namespace: tenant-acme
+
+---
+# Role for tenant admins
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: tenant-admin
+  namespace: tenant-acme
+rules:
+# Full access to common resources
+- apiGroups: [""]
+  resources: ["pods", "pods/log", "pods/exec", "services", "configmaps", "secrets", "persistentvolumeclaims"]
+  verbs: ["*"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "statefulsets", "replicasets"]
+  verbs: ["*"]
+- apiGroups: ["batch"]
+  resources: ["jobs", "cronjobs"]
+  verbs: ["*"]
+- apiGroups: ["autoscaling"]
+  resources: ["horizontalpodautoscalers"]
+  verbs: ["*"]
+# Read-only access to some resources
+- apiGroups: [""]
+  resources: ["resourcequotas", "limitranges"]
+  verbs: ["get", "list"]
+- apiGroups: ["networking.k8s.io"]
+  resources: ["networkpolicies"]
+  verbs: ["get", "list"]
+
+---
+# RoleBinding for tenant admins
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tenant-admin-binding
+  namespace: tenant-acme
+subjects:
+# Add tenant admin users/groups here
+- kind: Group
+  name: tenant-acme-admins
+  apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: tenant-admin
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# PodSecurityPolicy (if using PSP)
+# Note: PSP is deprecated, use Pod Security Standards instead
+apiVersion: policy/v1beta1
+kind: PodSecurityPolicy
+metadata:
+  name: tenant-acme-psp
+spec:
+  privileged: false
+  allowPrivilegeEscalation: false
+  requiredDropCapabilities:
+    - ALL
+  volumes:
+    - 'configMap'
+    - 'emptyDir'
+    - 'projected'
+    - 'secret'
+    - 'downwardAPI'
+    - 'persistentVolumeClaim'
+  hostNetwork: false
+  hostIPC: false
+  hostPID: false
+  runAsUser:
+    rule: 'MustRunAsNonRoot'
+  seLinux:
+    rule: 'RunAsAny'
+  supplementalGroups:
+    rule: 'MustRunAs'
+    ranges:
+      - min: 1
+        max: 65535
+  fsGroup:
+    rule: 'MustRunAs'
+    ranges:
+      - min: 1
+        max: 65535
+  readOnlyRootFilesystem: true

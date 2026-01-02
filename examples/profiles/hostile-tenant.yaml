@@ -1,0 +1,279 @@
+# Hostile Tenant Security Profile
+#
+# Maximum security profile for running untrusted/hostile code.
+# Use this for multi-tenant platforms where tenants may actively
+# try to escape or attack the infrastructure.
+#
+# This profile applies defense-in-depth with multiple layers:
+# - Strict syscall filtering
+# - Network isolation
+# - Resource limits
+# - Filesystem isolation
+#
+# Usage:
+#   zigviz compile profiles/hostile-tenant.yaml
+#   # Then use via annotation: zigviz.io/profile: "hostile-tenant"
+
+name: hostile-tenant
+version: "1.0"
+description: Maximum security for untrusted workloads
+
+# Block everything by default
+default_action: block
+
+# Whitelist only necessary syscalls
+allowed_syscalls:
+  # Memory management (required)
+  - brk
+  - mmap
+  - munmap
+  - mprotect
+  - madvise
+  - mremap
+
+  # Basic I/O
+  - read
+  - write
+  - close
+  - fstat
+  - lstat
+  - poll
+  - select
+  - pselect6
+  - lseek
+  - pread64
+  - pwrite64
+  - readv
+  - writev
+
+  # File operations (heavily restricted via mediation)
+  - openat
+  - stat
+  - newfstatat
+  - access
+  - faccessat
+  - faccessat2
+  - getdents64
+  - readlink
+  - readlinkat
+
+  # Process basics
+  - exit
+  - exit_group
+  - rt_sigaction
+  - rt_sigprocmask
+  - rt_sigreturn
+  - rt_sigsuspend
+  - getpid
+  - gettid
+  - getuid
+  - getgid
+  - geteuid
+  - getegid
+  - getppid
+
+  # Time (read-only)
+  - clock_gettime
+  - clock_getres
+  - gettimeofday
+  - nanosleep
+  - clock_nanosleep
+
+  # Threading (limited)
+  - futex
+  - set_tid_address
+  - set_robust_list
+  - get_robust_list
+  - clone3      # For threading only, not new processes
+  - wait4
+  - waitid
+
+  # Scheduling (read-only)
+  - sched_yield
+  - sched_getaffinity
+
+  # File descriptors
+  - dup
+  - dup2
+  - dup3
+  - pipe
+  - pipe2
+  - fcntl
+
+  # Event handling
+  - epoll_create1
+  - epoll_ctl
+  - epoll_wait
+  - epoll_pwait
+  - eventfd2
+
+  # Architecture
+  - arch_prctl
+  - prctl
+  - rseq
+
+  # Random
+  - getrandom
+
+  # Resource limits (read-only)
+  - getrlimit
+  - prlimit64
+
+# Mediated syscalls - broker decides
+mediated_syscalls:
+  - name: openat
+    conditions:
+      # Only allow access to workspace
+      - path_prefix: /workspace
+      - path_prefix: /tmp
+      # Read-only access to essential paths
+      - path_prefix: /usr/lib
+        flags: O_RDONLY
+      - path_prefix: /lib
+        flags: O_RDONLY
+      - path_prefix: /etc/ld.so
+        flags: O_RDONLY
+      - path_prefix: /etc/localtime
+        flags: O_RDONLY
+    action: allow
+
+  - name: clone3
+    conditions:
+      # Only allow thread creation, not new processes
+      - flags_mask: CLONE_THREAD
+    action: allow
+
+  - name: execve
+    # Block all exec - no spawning processes
+    action: block
+
+  - name: execveat
+    action: block
+
+# Network - completely isolated
+network:
+  allow_inbound: false
+  allow_outbound: false
+  allow_dns: false
+
+  # Optional: allow specific whitelisted endpoints
+  # allow_outbound:
+  #   - "api.internal.company.com:443"
+
+# Strict resource limits
+limits:
+  max_processes: 16       # Limited process tree
+  max_threads: 64         # Limited threads
+  max_open_files: 256     # Limited file descriptors
+  max_memory_mb: 512      # Memory cap
+  max_cpu_percent: 25     # CPU throttling
+  max_disk_mb: 1024       # Disk quota
+  max_network_bandwidth_mbps: 0  # No network
+
+  # Time limits
+  max_wall_time_seconds: 300     # 5 minute timeout
+  max_cpu_time_seconds: 60       # 1 minute CPU time
+
+# Filesystem - maximum isolation
+filesystem:
+  # Root is read-only
+  readonly:
+    - /
+
+  # Only workspace is writable (and size-limited)
+  writable:
+    - /workspace
+    - /tmp
+
+  # Hide sensitive paths completely
+  hidden:
+    - /etc/shadow
+    - /etc/gshadow
+    - /etc/passwd    # Hide user info
+    - /etc/group
+    - /root
+    - /home
+    - /var/log
+    - /var/run
+    - /proc/*/environ  # Hide environment variables
+    - /proc/*/cmdline  # Hide process info
+    - /sys             # Hide system info
+
+  # Prevent symlink attacks
+  no_symlink_follow: true
+
+  # Prevent hard link attacks
+  no_hard_links: true
+
+# Drop ALL capabilities
+capabilities:
+  drop:
+    - ALL
+  keep: []
+
+# Seccomp hardening
+seccomp:
+  # Use SECCOMP_RET_KILL_PROCESS for blocked syscalls
+  # instead of SECCOMP_RET_ERRNO (more secure)
+  kill_on_violation: true
+
+  # Block syscalls by number range (catch unknown syscalls)
+  block_unknown: true
+
+# Namespace isolation
+namespaces:
+  # Use all namespaces for maximum isolation
+  user: true
+  pid: true
+  net: true
+  mnt: true
+  uts: true
+  ipc: true
+  cgroup: true
+
+  # Map to unprivileged user
+  uid_map: "0:100000:65536"
+  gid_map: "0:100000:65536"
+
+# cgroup limits
+cgroups:
+  # Memory limits
+  memory_limit_mb: 512
+  memory_swap_limit_mb: 512  # Disable swap
+  oom_kill_disable: false
+
+  # CPU limits
+  cpu_quota_us: 25000        # 25% of one CPU
+  cpu_period_us: 100000
+
+  # I/O limits
+  io_read_bps: 10485760      # 10 MB/s
+  io_write_bps: 10485760     # 10 MB/s
+
+  # Process limits
+  pids_max: 16
+
+# Comprehensive audit logging
+audit:
+  log_blocked: true
+  log_mediated: true
+  log_allowed: true          # Log everything for forensics
+  log_path: /var/log/zigviz/hostile-tenant.log
+
+  # Include details for security analysis
+  include_args: true
+  include_stack: true
+  include_timing: true
+
+  # Forward to SIEM
+  # syslog_server: "siem.company.com:514"
+
+  # Alert on suspicious patterns
+  alerts:
+    - pattern: "repeated_blocked_syscalls"
+      threshold: 10
+      window_seconds: 60
+      action: "notify"
+    - pattern: "path_traversal_attempt"
+      threshold: 1
+      action: "notify"

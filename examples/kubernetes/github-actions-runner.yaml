@@ -1,0 +1,166 @@
+# Self-hosted GitHub Actions Runner with ZigViz
+#
+# This deploys a GitHub Actions runner that executes workflows
+# inside ZigViz-isolated containers for enhanced security.
+#
+# Prerequisites:
+#   1. Create a GitHub PAT with repo and workflow permissions
+#   2. Create secret: kubectl create secret generic github-runner \
+#        --from-literal=token=<PAT> \
+#        --from-literal=repo=owner/repo
+#
+# Usage:
+#   kubectl apply -f github-actions-runner.yaml
+#   kubectl logs -l app=github-runner -f
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: github-runner
+  labels:
+    app: github-runner
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: github-runner
+  template:
+    metadata:
+      labels:
+        app: github-runner
+      annotations:
+        zigviz.io/profile: "ci-runner"
+        zigviz.io/audit: "true"
+    spec:
+      runtimeClassName: zigviz
+
+      serviceAccountName: github-runner
+
+      containers:
+      - name: runner
+        image: ghcr.io/actions/actions-runner:latest
+        env:
+        - name: GITHUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: github-runner
+              key: token
+        - name: GITHUB_REPOSITORY
+          valueFrom:
+            secretKeyRef:
+              name: github-runner
+              key: repo
+        - name: RUNNER_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: RUNNER_WORKDIR
+          value: /workspace
+        - name: RUNNER_LABELS
+          value: "zigviz,secure,kubernetes"
+
+        resources:
+          limits:
+            memory: "2Gi"
+            cpu: "2"
+          requests:
+            memory: "1Gi"
+            cpu: "1"
+
+        volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+        - name: runner-data
+          mountPath: /home/runner
+        - name: docker-socket
+          mountPath: /var/run/docker.sock
+          readOnly: true
+
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          runAsGroup: 1000
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - |
+                # Gracefully remove runner before pod termination
+                ./config.sh remove --token $GITHUB_TOKEN
+
+      volumes:
+      - name: workspace
+        emptyDir:
+          sizeLimit: 10Gi
+      - name: runner-data
+        emptyDir: {}
+      - name: docker-socket
+        hostPath:
+          path: /var/run/docker.sock
+          type: Socket
+
+      terminationGracePeriodSeconds: 60
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: github-runner
+  labels:
+    app: github-runner
+
+---
+# NetworkPolicy to restrict runner network access
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: github-runner-policy
+spec:
+  podSelector:
+    matchLabels:
+      app: github-runner
+  policyTypes:
+  - Ingress
+  - Egress
+  egress:
+  # Allow DNS
+  - to:
+    - namespaceSelector: {}
+    ports:
+    - protocol: UDP
+      port: 53
+  # Allow GitHub API
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+    ports:
+    - protocol: TCP
+      port: 443
+  # Allow SSH for git operations
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+    ports:
+    - protocol: TCP
+      port: 22
+  ingress: []  # No ingress needed
+
+---
+# PodDisruptionBudget to ensure availability during updates
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: github-runner
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: github-runner

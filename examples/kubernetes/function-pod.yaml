@@ -1,0 +1,194 @@
+# Serverless Function Pod with ZigViz
+#
+# This example shows how to run serverless functions with
+# maximum isolation using ZigViz. The minimal profile ensures
+# functions can only perform basic computation.
+#
+# Usage:
+#   kubectl apply -f function-pod.yaml
+#   kubectl logs function-example
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: function-example
+  labels:
+    app: function
+    function: hello-world
+  annotations:
+    # Use minimal profile for maximum security
+    zigviz.io/profile: "minimal"
+    zigviz.io/audit: "true"
+    zigviz.io/strict-mode: "true"
+    # Timeout for function execution
+    zigviz.io/timeout: "30000"
+spec:
+  runtimeClassName: zigviz
+
+  # Don't restart - functions are one-shot
+  restartPolicy: Never
+
+  # Fast termination
+  terminationGracePeriodSeconds: 5
+
+  containers:
+  - name: function
+    image: python:3.11-alpine
+    command:
+    - python
+    - -c
+    - |
+      import json
+      import sys
+
+      def handler(event):
+          """Simple function handler"""
+          name = event.get('name', 'World')
+          return {
+              'statusCode': 200,
+              'body': f'Hello, {name}!'
+          }
+
+      # Read event from stdin or use default
+      try:
+          event = json.loads(sys.stdin.read())
+      except:
+          event = {}
+
+      result = handler(event)
+      print(json.dumps(result))
+
+    # Function input via stdin
+    stdin: true
+    stdinOnce: true
+
+    resources:
+      limits:
+        memory: "128Mi"
+        cpu: "100m"
+      requests:
+        memory: "64Mi"
+        cpu: "50m"
+
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop:
+          - ALL
+
+    # No volumes needed for pure computation
+
+---
+# Job-based function invocation
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: function-job
+  labels:
+    app: function
+    function: process-data
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 1
+  activeDeadlineSeconds: 60
+  template:
+    metadata:
+      annotations:
+        zigviz.io/profile: "minimal"
+        zigviz.io/strict-mode: "true"
+    spec:
+      runtimeClassName: zigviz
+      restartPolicy: Never
+
+      containers:
+      - name: function
+        image: node:20-alpine
+        command:
+        - node
+        - -e
+        - |
+          const event = JSON.parse(process.env.EVENT || '{}');
+
+          // Function logic
+          const result = {
+            processed: true,
+            timestamp: new Date().toISOString(),
+            input: event,
+            output: event.data ? event.data.toUpperCase() : null
+          };
+
+          console.log(JSON.stringify(result, null, 2));
+
+        env:
+        - name: EVENT
+          value: '{"data": "hello world"}'
+
+        resources:
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - ALL
+
+---
+# CronJob for scheduled functions
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: scheduled-function
+  labels:
+    app: function
+    function: cleanup
+spec:
+  schedule: "0 * * * *"  # Every hour
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 600
+      template:
+        metadata:
+          annotations:
+            zigviz.io/profile: "minimal"
+        spec:
+          runtimeClassName: zigviz
+          restartPolicy: Never
+
+          containers:
+          - name: cleanup
+            image: alpine:latest
+            command:
+            - sh
+            - -c
+            - |
+              echo "Running scheduled cleanup..."
+              echo "Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+              # Function logic here
+              echo "Cleanup complete"
+
+            resources:
+              limits:
+                memory: "64Mi"
+                cpu: "50m"
+
+            securityContext:
+              runAsNonRoot: true
+              runAsUser: 1000
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop:
+                  - ALL

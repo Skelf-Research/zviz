@@ -1,0 +1,101 @@
+# Minimal Security Profile
+#
+# This is the most restrictive profile - blocks almost everything.
+# Suitable for simple, single-purpose containers that only need
+# basic computation (no network, no filesystem access).
+#
+# Usage:
+#   zigviz compile profiles/minimal.yaml
+#   # Then use via annotation: zigviz.io/profile: "minimal"
+
+name: minimal
+version: "1.0"
+description: Maximum security - minimal syscall surface
+
+# Block everything by default
+default_action: block
+
+# Only allow essential syscalls
+allowed_syscalls:
+  # Memory management
+  - brk
+  - mmap
+  - munmap
+  - mprotect
+  - madvise
+
+  # Basic I/O (stdin/stdout/stderr only)
+  - read
+  - write
+  - close
+  - fstat
+
+  # Process basics
+  - exit
+  - exit_group
+  - rt_sigaction
+  - rt_sigprocmask
+  - rt_sigreturn
+  - getpid
+  - gettid
+  - getuid
+  - getgid
+  - geteuid
+  - getegid
+
+  # Time
+  - clock_gettime
+  - clock_getres
+  - nanosleep
+
+  # Threading primitives
+  - futex
+  - set_tid_address
+  - set_robust_list
+
+  # Architecture setup
+  - arch_prctl
+  - prctl
+  - rseq
+
+  # Random numbers
+  - getrandom
+
+# No mediated syscalls - everything else is blocked
+
+# No network access
+network:
+  allow_inbound: false
+  allow_outbound: false
+  allow_dns: false
+
+# Resource limits - very constrained
+limits:
+  max_processes: 1        # No forking
+  max_open_files: 16      # Minimal FDs
+  max_memory_mb: 128      # Limited memory
+  max_cpu_percent: 50     # CPU throttling
+
+# Filesystem - no access
+filesystem:
+  readonly:
+    - /
+  writable: []
+  hidden:
+    - /etc
+    - /root
+    - /home
+    - /var
+    - /tmp
+
+# Drop all capabilities
+capabilities:
+  drop:
+    - ALL
+  keep: []
+
+# Audit everything
+audit:
+  log_blocked: true
+  log_mediated: true
+  log_path: /var/log/zigviz/minimal.log

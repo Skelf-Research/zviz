@@ -1,0 +1,137 @@
+# CI Runner Job with ZigViz
+#
+# This example runs a build job in a ZigViz-isolated container.
+# The CI runner profile allows file system access and network to
+# internal registries while blocking dangerous syscalls.
+#
+# Usage:
+#   kubectl apply -f ci-runner-job.yaml
+#   kubectl logs -l job-name=build-job -f
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: build-job
+  labels:
+    app: ci-runner
+spec:
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        app: ci-runner
+      annotations:
+        # Use CI runner security profile
+        zigviz.io/profile: "ci-runner"
+        # Enable audit logging for debugging
+        zigviz.io/audit: "true"
+    spec:
+      # Use ZigViz runtime
+      runtimeClassName: zigviz
+
+      restartPolicy: Never
+
+      # Init container to fetch source code
+      initContainers:
+      - name: fetch-source
+        image: alpine/git:latest
+        command:
+        - git
+        - clone
+        - --depth=1
+        - https://github.com/example/repo.git
+        - /workspace
+        volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+
+      containers:
+      - name: build
+        image: node:20-alpine
+        workingDir: /workspace
+        command:
+        - sh
+        - -c
+        - |
+          echo "=== Starting build ==="
+          npm ci
+          npm run build
+          npm test
+          echo "=== Build complete ==="
+
+        resources:
+          limits:
+            memory: "1Gi"
+            cpu: "1"
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+
+        volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+        - name: npm-cache
+          mountPath: /root/.npm
+
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+
+        env:
+        - name: CI
+          value: "true"
+        - name: NODE_ENV
+          value: "test"
+
+      volumes:
+      - name: workspace
+        emptyDir: {}
+      - name: npm-cache
+        emptyDir: {}
+
+---
+# ServiceAccount for CI runners (optional)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ci-runner
+  labels:
+    app: ci-runner
+
+---
+# NetworkPolicy to restrict CI runner network access
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ci-runner-policy
+spec:
+  podSelector:
+    matchLabels:
+      app: ci-runner
+  policyTypes:
+  - Ingress
+  - Egress
+  egress:
+  # Allow DNS
+  - to:
+    - namespaceSelector: {}
+    ports:
+    - protocol: UDP
+      port: 53
+  # Allow npm registry
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+    ports:
+    - protocol: TCP
+      port: 443
+  ingress: []  # No ingress needed

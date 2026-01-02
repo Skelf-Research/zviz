@@ -1,0 +1,195 @@
+# CI Runner Security Profile
+#
+# This profile is designed for CI/CD build environments.
+# It allows file system access, network to registries,
+# and common build tools while blocking dangerous syscalls.
+#
+# Usage:
+#   zigviz compile profiles/ci-runner.yaml
+#   # Then use via annotation: zigviz.io/profile: "ci-runner"
+
+name: ci-runner
+version: "1.0"
+description: Security profile for CI/CD build workloads
+
+# Default action for syscalls not explicitly listed
+default_action: allow
+
+# Syscalls to block (dangerous operations)
+blocked_syscalls:
+  # Kernel module operations
+  - init_module
+  - finit_module
+  - delete_module
+
+  # Raw device access
+  - iopl
+  - ioperm
+
+  # Namespace manipulation (prevent container escape)
+  - setns
+  - unshare
+
+  # Mount operations (prevent filesystem escape)
+  - mount
+  - umount
+  - umount2
+  - pivot_root
+
+  # Capability manipulation
+  - capset
+
+  # Rebooting
+  - reboot
+  - kexec_load
+  - kexec_file_load
+
+  # Keyring (prevent credential theft)
+  - keyctl
+  - add_key
+  - request_key
+
+  # BPF (prevent kernel manipulation)
+  - bpf
+
+  # Performance events (information disclosure)
+  - perf_event_open
+
+  # Process tracing (prevent debugging other processes)
+  - ptrace
+  - process_vm_readv
+  - process_vm_writev
+
+  # Clock manipulation
+  - clock_settime
+  - settimeofday
+  - adjtimex
+
+  # Swap operations
+  - swapon
+  - swapoff
+
+  # Accounting
+  - acct
+
+# Syscalls requiring broker mediation
+mediated_syscalls:
+  # File operations - allow within workspace
+  - name: openat
+    conditions:
+      - path_prefix: /workspace
+      - path_prefix: /tmp
+      - path_prefix: /home
+      - path_prefix: /root/.npm
+      - path_prefix: /root/.cache
+      - path_prefix: /usr
+      - path_prefix: /lib
+      - path_prefix: /etc
+      - path_prefix: /proc/self
+    action: allow
+
+  - name: execve
+    conditions:
+      # Allow common build tools
+      - path_prefix: /usr/bin
+      - path_prefix: /usr/local/bin
+      - path_prefix: /bin
+      - path_prefix: /workspace/node_modules/.bin
+    action: allow
+
+# Network policy
+network:
+  # Allow outbound to common registries
+  allow_outbound:
+    - "registry.npmjs.org:443"
+    - "registry.yarnpkg.com:443"
+    - "pypi.org:443"
+    - "files.pythonhosted.org:443"
+    - "rubygems.org:443"
+    - "crates.io:443"
+    - "static.crates.io:443"
+    - "github.com:443"
+    - "github.com:22"
+    - "*.githubusercontent.com:443"
+    - "docker.io:443"
+    - "*.docker.io:443"
+    - "gcr.io:443"
+    - "*.gcr.io:443"
+
+  # Block inbound connections
+  allow_inbound: false
+
+  # Allow DNS
+  allow_dns: true
+
+# Resource limits
+limits:
+  max_processes: 1024
+  max_open_files: 65536
+  max_memory_mb: 4096
+  max_cpu_percent: 100
+
+# Filesystem restrictions
+filesystem:
+  # Read-only paths
+  readonly:
+    - /usr
+    - /lib
+    - /lib64
+    - /bin
+    - /sbin
+    - /etc
+
+  # Paths that can be written
+  writable:
+    - /workspace
+    - /tmp
+    - /home
+    - /root/.npm
+    - /root/.cache
+    - /var/tmp
+
+  # Hidden paths (not visible)
+  hidden:
+    - /etc/shadow
+    - /etc/gshadow
+    - /root/.ssh
+    - /root/.gnupg
+
+# Capabilities to drop
+capabilities:
+  drop:
+    - CAP_SYS_ADMIN
+    - CAP_SYS_PTRACE
+    - CAP_SYS_MODULE
+    - CAP_SYS_RAWIO
+    - CAP_SYS_BOOT
+    - CAP_NET_ADMIN
+    - CAP_NET_RAW
+    - CAP_MAC_ADMIN
+    - CAP_MAC_OVERRIDE
+    - CAP_SYS_TIME
+    - CAP_AUDIT_CONTROL
+    - CAP_AUDIT_READ
+    - CAP_AUDIT_WRITE
+    - CAP_BLOCK_SUSPEND
+    - CAP_WAKE_ALARM
+
+  # Capabilities to keep (needed for build operations)
+  keep:
+    - CAP_CHOWN
+    - CAP_DAC_OVERRIDE
+    - CAP_FOWNER
+    - CAP_FSETID
+    - CAP_SETGID
+    - CAP_SETUID
+    - CAP_SETFCAP
+
+# Audit settings
+audit:
+  # Log blocked syscalls
+  log_blocked: true
+  # Log mediated syscalls (verbose)
+  log_mediated: false
+  # Log file path
+  log_path: /var/log/zigviz/ci-runner.log
