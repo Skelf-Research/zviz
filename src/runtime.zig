@@ -95,8 +95,38 @@ pub const Config = struct {
     };
 };
 
-/// Container runtime state directory
-pub const STATE_DIR = "/run/zviz";
+/// Default container runtime state directory
+const DEFAULT_STATE_DIR = "/run/zviz";
+
+/// Current state directory (can be overridden with --root)
+var custom_state_dir: ?[]const u8 = null;
+
+/// Get the current state directory
+pub fn getStateDir() []const u8 {
+    return custom_state_dir orelse DEFAULT_STATE_DIR;
+}
+
+/// Set a custom state directory (for rootless mode)
+pub fn setStateDir(path: []const u8) void {
+    custom_state_dir = path;
+}
+
+/// Get the default state directory for rootless mode
+pub fn getRootlessStateDir(allocator: std.mem.Allocator) ![]const u8 {
+    // Try XDG_RUNTIME_DIR first (e.g., /run/user/1000)
+    if (std.posix.getenv("XDG_RUNTIME_DIR")) |runtime_dir| {
+        return std.fmt.allocPrint(allocator, "{s}/zviz", .{runtime_dir});
+    }
+
+    // Fall back to ~/.local/share/zviz/state
+    if (std.posix.getenv("HOME")) |home| {
+        return std.fmt.allocPrint(allocator, "{s}/.local/share/zviz/state", .{home});
+    }
+
+    // Last resort: /tmp/zviz-<uid>
+    const uid = std.os.linux.getuid();
+    return std.fmt.allocPrint(allocator, "/tmp/zviz-{d}", .{uid});
+}
 
 /// ZViz annotation keys for pod configuration
 pub const Annotations = struct {
@@ -334,16 +364,18 @@ pub const Container = struct {
 
     /// Save state to disk
     pub fn saveState(self: *Container) !void {
+        const state_dir = getStateDir();
+
         // Ensure state directory exists
-        std.fs.makeDirAbsolute(STATE_DIR) catch |err| {
+        std.fs.makeDirAbsolute(state_dir) catch |err| {
             if (err != error.PathAlreadyExists) {
-                log.warn("Cannot create state dir: {any}", .{err});
+                log.warn("Cannot create state dir {s}: {any}", .{ state_dir, err });
                 return;
             }
         };
 
-        var path_buf: [256]u8 = undefined;
-        const state_path = std.fmt.bufPrint(&path_buf, "{s}/{s}.json", .{ STATE_DIR, self.id }) catch return;
+        var path_buf: [512]u8 = undefined;
+        const state_path = std.fmt.bufPrint(&path_buf, "{s}/{s}.json", .{ state_dir, self.id }) catch return;
 
         const file = std.fs.createFileAbsolute(state_path, .{}) catch |err| {
             log.warn("Cannot create state file: {any}", .{err});
@@ -373,10 +405,12 @@ pub const Container = struct {
 
     /// Load state from disk
     pub fn loadState(allocator: std.mem.Allocator, id: []const u8) !Container {
-        var path_buf: [256]u8 = undefined;
-        const state_path = std.fmt.bufPrint(&path_buf, "{s}/{s}.json", .{ STATE_DIR, id }) catch {
+        const state_dir = getStateDir();
+        var path_buf: [512]u8 = undefined;
+        const state_path = std.fmt.bufPrint(&path_buf, "{s}/{s}.json", .{ state_dir, id }) catch {
             return errors.Error.ContainerNotFound;
         };
+        log.debug("Loading state from {s}", .{state_path});
 
         const file = std.fs.openFileAbsolute(state_path, .{}) catch {
             return errors.Error.ContainerNotFound;
@@ -398,8 +432,9 @@ pub const Container = struct {
 
     /// Delete state from disk
     pub fn deleteState(self: *Container) void {
-        var path_buf: [256]u8 = undefined;
-        const state_path = std.fmt.bufPrint(&path_buf, "{s}/{s}.json", .{ STATE_DIR, self.id }) catch return;
+        const state_dir = getStateDir();
+        var path_buf: [512]u8 = undefined;
+        const state_path = std.fmt.bufPrint(&path_buf, "{s}/{s}.json", .{ state_dir, self.id }) catch return;
         std.fs.deleteFileAbsolute(state_path) catch {};
     }
 };
@@ -729,12 +764,13 @@ pub fn run(allocator: std.mem.Allocator, args: []const []const u8) !void {
 /// List all containers
 pub fn list(allocator: std.mem.Allocator) !void {
     const stdout = std.fs.File.stdout();
+    const state_dir = getStateDir();
 
     // Header
     try stdout.writeAll("CONTAINER ID\tSTATUS\t\tPID\t\tBUNDLE\n");
 
     // List state files
-    var dir = std.fs.openDirAbsolute(STATE_DIR, .{ .iterate = true }) catch {
+    var dir = std.fs.openDirAbsolute(state_dir, .{ .iterate = true }) catch {
         // No containers
         return;
     };

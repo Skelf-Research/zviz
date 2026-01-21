@@ -54,32 +54,76 @@ fn run() !void {
         return;
     }
 
-    const command = args[1];
+    // Parse global options before the command
+    var arg_index: usize = 1;
+    var custom_root: ?[]const u8 = null;
+
+    while (arg_index < args.len) {
+        const arg = args[arg_index];
+        if (std.mem.eql(u8, arg, "--root")) {
+            if (arg_index + 1 < args.len) {
+                custom_root = args[arg_index + 1];
+                arg_index += 2;
+            } else {
+                log.err("--root requires a path argument", .{});
+                std.process.exit(1);
+            }
+        } else if (std.mem.startsWith(u8, arg, "--root=")) {
+            custom_root = arg[7..];
+            arg_index += 1;
+        } else {
+            // First non-option is the command
+            break;
+        }
+    }
+
+    // Set up state directory
+    if (custom_root) |root| {
+        runtime.setStateDir(root);
+        log.debug("Using custom state directory: {s}", .{root});
+    } else {
+        // Auto-detect rootless mode and set appropriate state directory
+        const uid = std.os.linux.getuid();
+        if (uid != 0) {
+            // Running as non-root, use rootless state directory
+            const rootless_dir = try runtime.getRootlessStateDir(allocator);
+            runtime.setStateDir(rootless_dir);
+            log.debug("Running in rootless mode, state directory: {s}", .{rootless_dir});
+        }
+    }
+
+    if (arg_index >= args.len) {
+        try printUsage();
+        return;
+    }
+
+    const command = args[arg_index];
+    const cmd_args = args[arg_index + 1 ..];
 
     if (std.mem.eql(u8, command, "version") or std.mem.eql(u8, command, "--version")) {
         try printVersion();
     } else if (std.mem.eql(u8, command, "help") or std.mem.eql(u8, command, "--help")) {
         try printUsage();
     } else if (std.mem.eql(u8, command, "create")) {
-        try runtime.create(allocator, args[2..]);
+        try runtime.create(allocator, cmd_args);
     } else if (std.mem.eql(u8, command, "start")) {
-        try runtime.start(allocator, args[2..]);
+        try runtime.start(allocator, cmd_args);
     } else if (std.mem.eql(u8, command, "kill")) {
-        try runtime.kill(allocator, args[2..]);
+        try runtime.kill(allocator, cmd_args);
     } else if (std.mem.eql(u8, command, "delete")) {
-        try runtime.delete(allocator, args[2..]);
+        try runtime.delete(allocator, cmd_args);
     } else if (std.mem.eql(u8, command, "state")) {
-        try runtime.state(allocator, args[2..]);
+        try runtime.state(allocator, cmd_args);
     } else if (std.mem.eql(u8, command, "run")) {
-        try runtime.run(allocator, args[2..]);
+        try runtime.run(allocator, cmd_args);
     } else if (std.mem.eql(u8, command, "list") or std.mem.eql(u8, command, "ps")) {
         try runtime.list(allocator);
     } else if (std.mem.eql(u8, command, "exec")) {
-        try runtime.exec(allocator, args[2..]);
+        try runtime.exec(allocator, cmd_args);
     } else if (std.mem.eql(u8, command, "spec")) {
-        try runtime.spec(args[2..]);
+        try runtime.spec(cmd_args);
     } else if (std.mem.eql(u8, command, "compile")) {
-        try compiler.compileProfile(allocator, args[2..]);
+        try compiler.compileProfile(allocator, cmd_args);
     } else if (std.mem.eql(u8, command, "audit")) {
         try runSecurityAudit(allocator);
     } else if (std.mem.eql(u8, command, "validate")) {
@@ -92,13 +136,13 @@ fn run() !void {
             std.process.exit(1);
         }
     } else if (std.mem.eql(u8, command, "benchmark")) {
-        try runBenchmarks(allocator, args[2..]);
+        try runBenchmarks(allocator, cmd_args);
     } else if (std.mem.eql(u8, command, "compare") or std.mem.eql(u8, command, "compare-gvisor")) {
         try testing.comparison.runFullComparison(allocator);
     } else if (std.mem.eql(u8, command, "metrics")) {
-        try handleMetrics(allocator, args[2..]);
+        try handleMetrics(allocator, cmd_args);
     } else if (std.mem.eql(u8, command, "config")) {
-        try showConfig(allocator, args[2..]);
+        try showConfig(allocator, cmd_args);
     } else {
         log.err("Unknown command: {s}", .{command});
         try printUsage();

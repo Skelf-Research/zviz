@@ -36,32 +36,166 @@ pub const Limits = struct {
     io_max: ?[]const u8 = null,
 };
 
-/// Base cgroup path for zviz containers
+/// Base cgroup path for zviz containers (root mode)
 pub const BASE_PATH = "/sys/fs/cgroup/zviz";
+
+/// Get the user's delegated cgroup path for rootless mode
+fn getUserCgroupPath(allocator: std.mem.Allocator) !?[]const u8 {
+    // In cgroupv2, we need to create our cgroups at a level where controllers are enabled
+    // The user@<uid>.service cgroup typically has controllers enabled for child cgroups
+
+    // First, get current user ID
+    const uid = std.os.linux.getuid();
+
+    // Try the standard systemd user service path first
+    const user_service_path = try std.fmt.allocPrint(
+        allocator,
+        "/sys/fs/cgroup/user.slice/user-{d}.slice/user@{d}.service/zviz",
+        .{ uid, uid },
+    );
+
+    // Check if we can write to the parent (user service level)
+    const parent_path = try std.fmt.allocPrint(
+        allocator,
+        "/sys/fs/cgroup/user.slice/user-{d}.slice/user@{d}.service",
+        .{ uid, uid },
+    );
+    defer allocator.free(parent_path);
+
+    // Verify parent exists and has controllers
+    std.fs.accessAbsolute(parent_path, .{}) catch {
+        allocator.free(user_service_path);
+        // Fallback: Read from /proc/self/cgroup
+        return try getUserCgroupPathFromProc(allocator);
+    };
+
+    return user_service_path;
+}
+
+/// Fallback: get cgroup path from /proc/self/cgroup
+fn getUserCgroupPathFromProc(allocator: std.mem.Allocator) !?[]const u8 {
+    const cgroup_file = std.fs.openFileAbsolute("/proc/self/cgroup", .{ .mode = .read_only }) catch {
+        return null;
+    };
+    defer cgroup_file.close();
+
+    var buf: [4096]u8 = undefined;
+    const bytes_read = cgroup_file.readAll(&buf) catch return null;
+    const content = buf[0..bytes_read];
+
+    // Format for cgroups v2: "0::<path>"
+    var lines = std.mem.splitScalar(u8, content, '\n');
+    while (lines.next()) |line| {
+        if (std.mem.startsWith(u8, line, "0::")) {
+            const cgroup_path = std.mem.trim(u8, line[3..], " \t\r\n");
+            if (cgroup_path.len > 0) {
+                // Try to find a parent cgroup that has subtree_control enabled
+                // Walk up the path until we find one
+                var path_buf: [4096]u8 = undefined;
+                var current_path = cgroup_path;
+
+                while (current_path.len > 1) {
+                    const subtree_ctrl_path = std.fmt.bufPrint(
+                        &path_buf,
+                        "/sys/fs/cgroup{s}/cgroup.subtree_control",
+                        .{current_path},
+                    ) catch break;
+
+                    // Check if this level has subtree_control with memory
+                    const file = std.fs.openFileAbsolute(subtree_ctrl_path, .{ .mode = .read_only }) catch {
+                        // Move up one level
+                        if (std.mem.lastIndexOfScalar(u8, current_path, '/')) |idx| {
+                            current_path = current_path[0..idx];
+                            continue;
+                        }
+                        break;
+                    };
+                    defer file.close();
+
+                    var ctrl_buf: [256]u8 = undefined;
+                    const ctrl_len = file.readAll(&ctrl_buf) catch break;
+                    const controllers = ctrl_buf[0..ctrl_len];
+
+                    if (std.mem.indexOf(u8, controllers, "memory") != null) {
+                        // Found a level with memory controller enabled
+                        return try std.fmt.allocPrint(
+                            allocator,
+                            "/sys/fs/cgroup{s}/zviz",
+                            .{current_path},
+                        );
+                    }
+
+                    // Move up one level
+                    if (std.mem.lastIndexOfScalar(u8, current_path, '/')) |idx| {
+                        current_path = current_path[0..idx];
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    return null;
+}
+
+/// Check if we're running as root
+fn isRoot() bool {
+    return std.os.linux.geteuid() == 0;
+}
 
 /// Cgroup manager for a container
 pub const CgroupManager = struct {
     allocator: std.mem.Allocator,
     cgroup_path: []const u8,
     container_id: []const u8,
+    base_path: []const u8,
+    owns_base_path: bool,
 
     pub fn init(allocator: std.mem.Allocator, container_id: []const u8) !CgroupManager {
+        return initWithRootless(allocator, container_id, !isRoot());
+    }
+
+    pub fn initWithRootless(allocator: std.mem.Allocator, container_id: []const u8, rootless: bool) !CgroupManager {
+        // Determine base path
+        var base_path: []const u8 = undefined;
+        var owns_base_path = false;
+
+        if (rootless) {
+            // Try to get user's delegated cgroup
+            if (try getUserCgroupPath(allocator)) |user_path| {
+                base_path = user_path;
+                owns_base_path = true;
+                log.info("Using rootless cgroup path: {s}", .{base_path});
+            } else {
+                // Fallback to default (will likely fail, but let's try)
+                base_path = BASE_PATH;
+                log.warn("Could not detect user cgroup, using default path (may fail)", .{});
+            }
+        } else {
+            base_path = BASE_PATH;
+        }
+
         const path = try std.fmt.allocPrint(
             allocator,
             "{s}/{s}",
-            .{ BASE_PATH, container_id },
+            .{ base_path, container_id },
         );
         const id_copy = try allocator.dupe(u8, container_id);
         return .{
             .allocator = allocator,
             .cgroup_path = path,
             .container_id = id_copy,
+            .base_path = base_path,
+            .owns_base_path = owns_base_path,
         };
     }
 
     pub fn deinit(self: *CgroupManager) void {
         self.allocator.free(self.cgroup_path);
         self.allocator.free(self.container_id);
+        if (self.owns_base_path) {
+            self.allocator.free(@constCast(self.base_path));
+        }
     }
 
     /// Create the cgroup directory and enable controllers
@@ -69,9 +203,9 @@ pub const CgroupManager = struct {
         log.info("Creating cgroup: {s}", .{self.cgroup_path});
 
         // First ensure parent zviz cgroup exists
-        std.fs.makeDirAbsolute(BASE_PATH) catch |err| {
+        std.fs.makeDirAbsolute(self.base_path) catch |err| {
             if (err != error.PathAlreadyExists) {
-                log.err("Failed to create base cgroup: {s}", .{BASE_PATH});
+                log.err("Failed to create base cgroup: {s}", .{self.base_path});
                 return errors.Error.CgroupCreationFailed;
             }
         };
@@ -90,19 +224,65 @@ pub const CgroupManager = struct {
 
     /// Enable required controllers in the parent cgroup
     fn enableControllersInParent(self: *CgroupManager) !void {
-        const subtree_path = BASE_PATH ++ "/cgroup.subtree_control";
+        // First, read available controllers
+        const controllers_path = try std.fmt.allocPrint(
+            self.allocator,
+            "{s}/cgroup.controllers",
+            .{self.base_path},
+        );
+        defer self.allocator.free(controllers_path);
+
+        var available_buf: [256]u8 = undefined;
+        var available_controllers: []const u8 = "";
+
+        if (std.fs.openFileAbsolute(controllers_path, .{ .mode = .read_only })) |file| {
+            defer file.close();
+            const bytes_read = file.readAll(&available_buf) catch 0;
+            available_controllers = std.mem.trim(u8, available_buf[0..bytes_read], " \t\r\n");
+        } else |_| {}
+
+        // Build the subtree_control string with only available controllers
+        var enable_buf: [128]u8 = undefined;
+        var pos: usize = 0;
+
+        const controllers_to_enable = [_][]const u8{ "cpu", "memory", "pids", "io" };
+        for (controllers_to_enable) |ctrl| {
+            if (std.mem.indexOf(u8, available_controllers, ctrl) != null) {
+                if (pos > 0) {
+                    enable_buf[pos] = ' ';
+                    pos += 1;
+                }
+                enable_buf[pos] = '+';
+                pos += 1;
+                @memcpy(enable_buf[pos..][0..ctrl.len], ctrl);
+                pos += ctrl.len;
+            }
+        }
+
+        if (pos == 0) {
+            log.debug("No controllers available to enable", .{});
+            return;
+        }
+
+        const enable_str = enable_buf[0..pos];
+        log.info("Enabling controllers: {s}", .{enable_str});
+
+        const subtree_path = try std.fmt.allocPrint(
+            self.allocator,
+            "{s}/cgroup.subtree_control",
+            .{self.base_path},
+        );
+        defer self.allocator.free(subtree_path);
 
         const file = std.fs.openFileAbsolute(subtree_path, .{ .mode = .write_only }) catch |err| {
             log.debug("Could not open subtree_control: {any}", .{err});
-            return; // May not be available, continue
+            return;
         };
         defer file.close();
 
-        // Enable all common controllers
-        file.writeAll("+cpu +memory +io +pids") catch |err| {
+        file.writeAll(enable_str) catch |err| {
             log.debug("Could not enable controllers: {any}", .{err});
         };
-        _ = self;
     }
 
     /// Apply resource limits
