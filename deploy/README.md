@@ -1,11 +1,11 @@
-# ZigViz Deployment Guide
+# ZViz Deployment Guide
 
-This directory contains everything needed to deploy ZigViz in production.
+This directory contains everything needed to deploy ZViz in production.
 
 ## Quick Start
 
 ```bash
-# Install ZigViz
+# Install ZViz
 sudo ./install.sh
 
 # For Kubernetes
@@ -31,26 +31,26 @@ kubectl apply -f kubernetes/runtime-class.yaml
 ┌─────────────────────────────────────────────────────────────────┐
 │                     Kubernetes Cluster                           │
 │  ┌─────────────────────────────────────────────────────────┐    │
-│  │  RuntimeClass: zigviz                                    │    │
-│  │  handler: zigviz                                         │    │
+│  │  RuntimeClass: zviz                                    │    │
+│  │  handler: zviz                                         │    │
 │  └─────────────────────────────────────────────────────────┘    │
 │                                                                  │
 │  ┌─────────────────────────────────────────────────────────┐    │
 │  │                     Worker Node                          │    │
 │  │  ┌─────────────────────────────────────────────────┐    │    │
 │  │  │  containerd                                      │    │    │
-│  │  │  └── ZigViz runtime (/usr/local/bin/zigviz)     │    │    │
-│  │  │       └── Pod (runtimeClassName: zigviz)        │    │    │
+│  │  │  └── ZViz runtime (/usr/local/bin/zviz)     │    │    │
+│  │  │       └── Pod (runtimeClassName: zviz)        │    │    │
 │  │  └─────────────────────────────────────────────────┘    │    │
 │  └─────────────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Step 1: Install ZigViz on All Worker Nodes
+### Step 1: Install ZViz on All Worker Nodes
 
 ```bash
 # On each worker node
-curl -fsSL https://zigviz.io/install.sh | sudo sh
+curl -fsSL https://zviz.io/install.sh | sudo sh
 
 # Or using the local install script
 sudo ./install.sh
@@ -59,14 +59,14 @@ sudo ./install.sh
 ### Step 2: Configure containerd
 
 ```bash
-# Append ZigViz runtime config to containerd
+# Append ZViz runtime config to containerd
 sudo cat containerd/config.toml >> /etc/containerd/config.toml
 
 # Restart containerd
 sudo systemctl restart containerd
 
 # Verify
-sudo ctr plugins ls | grep zigviz
+sudo ctr plugins ls | grep zviz
 ```
 
 ### Step 3: Create RuntimeClass
@@ -84,7 +84,7 @@ kind: Pod
 metadata:
   name: my-app
 spec:
-  runtimeClassName: zigviz  # <-- Add this line
+  runtimeClassName: zviz  # <-- Add this line
   containers:
   - name: app
     image: my-app:latest
@@ -98,10 +98,10 @@ kind: Pod
 metadata:
   name: ci-job
   annotations:
-    zigviz.io/profile: "ci-runner"     # Security profile
-    zigviz.io/audit: "true"            # Enable audit logging
+    zviz.io/profile: "ci-runner"     # Security profile
+    zviz.io/audit: "true"            # Enable audit logging
 spec:
-  runtimeClassName: zigviz
+  runtimeClassName: zviz
   containers:
   - name: build
     image: node:20
@@ -112,10 +112,10 @@ spec:
 
 | Annotation | Description | Default |
 |------------|-------------|---------|
-| `zigviz.io/profile` | Security profile name | `default` |
-| `zigviz.io/audit` | Enable audit logging | `false` |
-| `zigviz.io/broker-timeout` | Broker timeout (ms) | `1000` |
-| `zigviz.io/strict-mode` | Fail on unknown syscalls | `false` |
+| `zviz.io/profile` | Security profile name | `default` |
+| `zviz.io/audit` | Enable audit logging | `false` |
+| `zviz.io/broker-timeout` | Broker timeout (ms) | `1000` |
+| `zviz.io/strict-mode` | Fail on unknown syscalls | `false` |
 
 ---
 
@@ -123,7 +123,7 @@ spec:
 
 For standalone containerd (without Kubernetes):
 
-### Step 1: Install ZigViz
+### Step 1: Install ZViz
 
 ```bash
 sudo ./install.sh
@@ -134,10 +134,10 @@ sudo ./install.sh
 Add to `/etc/containerd/config.toml`:
 
 ```toml
-[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.zigviz]
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.zviz]
   runtime_type = "io.containerd.runc.v2"
-  [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.zigviz.options]
-    BinaryName = "/usr/local/bin/zigviz"
+  [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.zviz.options]
+    BinaryName = "/usr/local/bin/zviz"
     SystemdCgroup = true
 ```
 
@@ -151,18 +151,18 @@ sudo systemctl restart containerd
 
 ```bash
 # Using ctr
-sudo ctr run --runtime io.containerd.runc.v2.zigviz \
-  docker.io/library/alpine:latest test echo "Hello from ZigViz"
+sudo ctr run --runtime io.containerd.runc.v2.zviz \
+  docker.io/library/alpine:latest test echo "Hello from ZViz"
 
 # Using nerdctl
-sudo nerdctl run --runtime zigviz alpine echo "Hello"
+sudo nerdctl run --runtime zviz alpine echo "Hello"
 ```
 
 ---
 
 ## Docker
 
-### Step 1: Install ZigViz
+### Step 1: Install ZViz
 
 ```bash
 sudo ./install.sh
@@ -175,8 +175,8 @@ Add to `/etc/docker/daemon.json`:
 ```json
 {
   "runtimes": {
-    "zigviz": {
-      "path": "/usr/local/bin/zigviz"
+    "zviz": {
+      "path": "/usr/local/bin/zviz"
     }
   }
 }
@@ -191,14 +191,14 @@ sudo systemctl restart docker
 ### Step 4: Run Containers
 
 ```bash
-docker run --runtime=zigviz alpine echo "Hello from ZigViz"
+docker run --runtime=zviz alpine echo "Hello from ZViz"
 ```
 
 ---
 
 ## Standalone
 
-Use ZigViz directly without a container runtime:
+Use ZViz directly without a container runtime:
 
 ### Create an OCI Bundle
 
@@ -211,21 +211,21 @@ docker export $(docker create alpine) | tar -C mycontainer/rootfs -xf -
 
 # Generate OCI spec
 cd mycontainer
-zigviz spec
+zviz spec
 ```
 
 ### Run the Container
 
 ```bash
 # Create and start
-sudo zigviz run my-container . /bin/sh -c "echo Hello"
+sudo zviz run my-container . /bin/sh -c "echo Hello"
 
 # Or separate create/start
-sudo zigviz create my-container .
-sudo zigviz start my-container
-sudo zigviz exec my-container /bin/sh
-sudo zigviz kill my-container
-sudo zigviz delete my-container
+sudo zviz create my-container .
+sudo zviz start my-container
+sudo zviz exec my-container /bin/sh
+sudo zviz kill my-container
+sudo zviz delete my-container
 ```
 
 ---
@@ -249,28 +249,28 @@ deploy/
 ### Check Installation
 
 ```bash
-zigviz version
-zigviz validate
+zviz version
+zviz validate
 ```
 
 ### Check Kubernetes Integration
 
 ```bash
 kubectl get runtimeclass
-kubectl describe runtimeclass zigviz
+kubectl describe runtimeclass zviz
 ```
 
 ### Check containerd Integration
 
 ```bash
-sudo ctr plugins ls | grep zigviz
+sudo ctr plugins ls | grep zviz
 ```
 
 ### Run Test Pod
 
 ```bash
 kubectl apply -f kubernetes/example-pod.yaml
-kubectl logs zigviz-example
+kubectl logs zviz-example
 ```
 
 ## Troubleshooting
@@ -284,18 +284,18 @@ kubectl describe pod <pod-name>
 # Check containerd logs
 journalctl -u containerd -f
 
-# Check ZigViz logs
-cat /var/log/zigviz/*.log
+# Check ZViz logs
+cat /var/log/zviz/*.log
 ```
 
 ### "Runtime not found"
 
 ```bash
 # Verify binary exists
-ls -la /usr/local/bin/zigviz
+ls -la /usr/local/bin/zviz
 
 # Verify containerd config
-grep -A5 zigviz /etc/containerd/config.toml
+grep -A5 zviz /etc/containerd/config.toml
 
 # Restart containerd
 sudo systemctl restart containerd
@@ -305,10 +305,10 @@ sudo systemctl restart containerd
 
 ```bash
 # Check capabilities
-zigviz validate
+zviz validate
 
 # Run validation
-sudo zigviz audit
+sudo zviz audit
 ```
 
 ## See Also

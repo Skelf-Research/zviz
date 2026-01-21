@@ -1,6 +1,6 @@
 # Profile Schema
 
-This document defines the logical schema for ZigViz profiles. Profiles are the input to the policy compiler. For a complete, concrete example, see `docs/profile-ci-runner.md`.
+This document defines the logical schema for ZViz profiles. Profiles are the input to the policy compiler. For a complete, concrete example, see `docs/profile-ci-runner.md`.
 
 ## Schema Reference
 
@@ -86,23 +86,23 @@ filesystem:
 
 ### LSM block
 
-Specifies Linux Security Module configuration. ZigViz supports AppArmor, SELinux, or Landlock:
+Specifies Linux Security Module configuration. ZViz supports AppArmor, SELinux, or Landlock:
 
 ```yaml
 # AppArmor example
 lsm:
   type: apparmor
-  profile: zigviz-ci
+  profile: zviz-ci
 
 # SELinux example
 lsm:
   type: selinux
-  context: system_u:system_r:zigviz_t:s0
+  context: system_u:system_r:zviz_t:s0
 
 # Landlock example (unprivileged, composable)
 lsm:
   type: landlock
-  ruleset: zigviz-ci
+  ruleset: zviz-ci
 ```
 
 The compiler generates appropriate rules for the configured LSM type.

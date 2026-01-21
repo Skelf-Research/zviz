@@ -13,7 +13,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-RESULTS_DIR="/tmp/zigviz_benchmarks_$(date +%s)"
+RESULTS_DIR="/tmp/zviz_benchmarks_$(date +%s)"
 
 # Colors
 RED='\033[0;31m'
@@ -422,7 +422,7 @@ print_summary() {
     fi
 
     echo ""
-    echo "ZigViz targets native network performance while matching"
+    echo "ZViz targets native network performance while matching"
     echo "gVisor's security posture for syscall filtering."
 }
 

@@ -1,14 +1,14 @@
 # Configuration Reference
 
-ZigViz configuration options.
+ZViz configuration options.
 
 ## Config File
 
-`/etc/zigviz/config.yaml`:
+`/etc/zviz/config.yaml`:
 
 ```yaml
 runtime:
-  state_dir: /var/lib/zigviz
+  state_dir: /var/lib/zviz
   rootless: false
 
 logging:
@@ -28,6 +28,6 @@ security:
 
 | Variable | Description |
 |----------|-------------|
-| `ZIGVIZ_LOG_LEVEL` | Log level |
-| `ZIGVIZ_STATE_DIR` | State directory |
-| `ZIGVIZ_CONFIG` | Config file path |
+| `ZVIZ_LOG_LEVEL` | Log level |
+| `ZVIZ_STATE_DIR` | State directory |
+| `ZVIZ_CONFIG` | Config file path |

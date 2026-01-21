@@ -1,8 +1,8 @@
-# ZigViz
+# ZViz
 
 **High-performance container isolation with gVisor-grade security**
 
-ZigViz is a Zig-based container isolation runtime that delivers strong security guarantees with near-native performance. It achieves gVisor-equivalent policy outcomes without a userspace kernel, using layered kernel primitives and a minimal syscall broker.
+ZViz is a Zig-based container isolation runtime that delivers strong security guarantees with near-native performance. It achieves gVisor-equivalent policy outcomes without a userspace kernel, using layered kernel primitives and a minimal syscall broker.
 
 <div class="grid cards" markdown>
 
@@ -10,7 +10,7 @@ ZigViz is a Zig-based container isolation runtime that delivers strong security 
 
     ---
 
-    Install ZigViz and run your first isolated container
+    Install ZViz and run your first isolated container
 
     [:octicons-arrow-right-24: Quick Start](getting-started/quickstart.md)
 
@@ -40,7 +40,7 @@ ZigViz is a Zig-based container isolation runtime that delivers strong security 
 
 </div>
 
-## Why ZigViz?
+## Why ZViz?
 
 ### The Problem
 
@@ -48,7 +48,7 @@ Running untrusted workloads requires strong isolation. Traditional containers (r
 
 ### The Solution
 
-ZigViz reaches gVisor-equivalent security outcomes through **layered kernel enforcement** rather than syscall emulation:
+ZViz reaches gVisor-equivalent security outcomes through **layered kernel enforcement** rather than syscall emulation:
 
 | Layer | Mechanism | Purpose |
 |-------|-----------|---------|
@@ -64,7 +64,7 @@ ZigViz reaches gVisor-equivalent security outcomes through **layered kernel enfo
 Workload: HTTP throughput (requests/sec, higher is better)
 
 runc (baseline)     ████████████████████████████████████████  100%
-ZigViz              ██████████████████████████████████████    95%
+ZViz              ██████████████████████████████████████    95%
 gVisor              ██████████████████                        45%
 ```
 
@@ -79,7 +79,7 @@ gVisor              ██████████████████      
 
 ## Use Cases
 
-ZigViz is designed for:
+ZViz is designed for:
 
 - **CI/CD runners** — Isolated build environments for untrusted code
 - **Multi-tenant platforms** — Strong tenant isolation with high density
@@ -89,11 +89,11 @@ ZigViz is designed for:
 ## Quick Example
 
 ```bash
-# Install ZigViz
-curl -fsSL https://zigviz.io/install.sh | sh
+# Install ZViz
+curl -fsSL https://zviz.io/install.sh | sh
 
 # Run a container with the CI runner profile
-zigviz run --profile ci-runner my-build /bin/sh -c "npm install && npm test"
+zviz run --profile ci-runner my-build /bin/sh -c "npm install && npm test"
 ```
 
 ## Architecture Overview
@@ -118,7 +118,7 @@ zigviz run --profile ci-runner my-build /bin/sh -c "npm install && npm test"
                                              │
                                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                      ZigViz Broker                               │
+│                      ZViz Broker                               │
 │  ┌─────────────────────────────────────────────────────────┐    │
 │  │  openat │ ioctl │ socket │ clone │ execve │ prctl       │    │
 │  │         Argument validation + policy decision           │    │
@@ -135,9 +135,9 @@ zigviz run --profile ci-runner my-build /bin/sh -c "npm install && npm test"
 ## Getting Help
 
 - **Documentation**: You're reading it!
-- **GitHub Issues**: [github.com/zigviz/zigviz/issues](https://github.com/zigviz/zigviz/issues)
+- **GitHub Issues**: [github.com/zviz/zviz/issues](https://github.com/zviz/zviz/issues)
 - **Security Issues**: See [Security Policy](security/index.md)
 
 ## License
 
-ZigViz is licensed under the Apache License 2.0. See [LICENSE](https://github.com/zigviz/zigviz/blob/main/LICENSE) for details.
+ZViz is licensed under the Apache License 2.0. See [LICENSE](https://github.com/zviz/zviz/blob/main/LICENSE) for details.

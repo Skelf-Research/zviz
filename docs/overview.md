@@ -1,10 +1,10 @@
 # Overview
 
-ZigViz is a Zig-based isolation runtime design that aims to deliver gVisor-grade policy enforcement with near-native performance by combining kernel primitives with a small policy broker.
+ZViz is a Zig-based isolation runtime design that aims to deliver gVisor-grade policy enforcement with near-native performance by combining kernel primitives with a small policy broker.
 
 ## Core thesis
 
-gVisor’s advantage is syscall interposition via a userspace kernel. ZigViz reaches the same policy outcomes without emulating Linux by composing strict kernel mechanisms and brokering only the syscalls that need mediation.
+gVisor’s advantage is syscall interposition via a userspace kernel. ZViz reaches the same policy outcomes without emulating Linux by composing strict kernel mechanisms and brokering only the syscalls that need mediation.
 
 ## Differentiation
 
@@ -15,7 +15,7 @@ gVisor’s advantage is syscall interposition via a userspace kernel. ZigViz rea
 
 ## Cost and performance posture
 
-ZigViz targets near-native performance by mediating only security-relevant syscalls and using the host kernel networking stack. The expected result is materially higher pod density, lower per-pod memory overhead, and tighter tail latency compared to gVisor. See `docs/performance-cost.md` for quantified assumptions and targets.
+ZViz targets near-native performance by mediating only security-relevant syscalls and using the host kernel networking stack. The expected result is materially higher pod density, lower per-pod memory overhead, and tighter tail latency compared to gVisor. See `docs/performance-cost.md` for quantified assumptions and targets.
 
 ## Target use cases
 
@@ -26,7 +26,7 @@ ZigViz targets near-native performance by mediating only security-relevant sysca
 
 ## Operational modes
 
-ZigViz supports two operational modes:
+ZViz supports two operational modes:
 
 - **High-density mode** (default): Uses layered kernel controls (namespaces, seccomp, LSM, cgroups) plus the Zig broker to enforce policy. Delivers near-native performance for strong policy enforcement. The host kernel is trusted.
 

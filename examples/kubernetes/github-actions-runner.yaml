@@ -1,7 +1,7 @@
-# Self-hosted GitHub Actions Runner with ZigViz
+# Self-hosted GitHub Actions Runner with ZViz
 #
 # This deploys a GitHub Actions runner that executes workflows
-# inside ZigViz-isolated containers for enhanced security.
+# inside ZViz-isolated containers for enhanced security.
 #
 # Prerequisites:
 #   1. Create a GitHub PAT with repo and workflow permissions
@@ -30,10 +30,10 @@ spec:
       labels:
         app: github-runner
       annotations:
-        zigviz.io/profile: "ci-runner"
-        zigviz.io/audit: "true"
+        zviz.io/profile: "ci-runner"
+        zviz.io/audit: "true"
     spec:
-      runtimeClassName: zigviz
+      runtimeClassName: zviz
 
       serviceAccountName: github-runner
 
@@ -58,7 +58,7 @@ spec:
         - name: RUNNER_WORKDIR
           value: /workspace
         - name: RUNNER_LABELS
-          value: "zigviz,secure,kubernetes"
+          value: "zviz,secure,kubernetes"
 
         resources:
           limits:

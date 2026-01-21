@@ -36,8 +36,8 @@ pub const Limits = struct {
     io_max: ?[]const u8 = null,
 };
 
-/// Base cgroup path for zigviz containers
-pub const BASE_PATH = "/sys/fs/cgroup/zigviz";
+/// Base cgroup path for zviz containers
+pub const BASE_PATH = "/sys/fs/cgroup/zviz";
 
 /// Cgroup manager for a container
 pub const CgroupManager = struct {
@@ -68,7 +68,7 @@ pub const CgroupManager = struct {
     pub fn create(self: *CgroupManager) !void {
         log.info("Creating cgroup: {s}", .{self.cgroup_path});
 
-        // First ensure parent zigviz cgroup exists
+        // First ensure parent zviz cgroup exists
         std.fs.makeDirAbsolute(BASE_PATH) catch |err| {
             if (err != error.PathAlreadyExists) {
                 log.err("Failed to create base cgroup: {s}", .{BASE_PATH});

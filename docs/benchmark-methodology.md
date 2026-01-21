@@ -1,11 +1,11 @@
 # Benchmark Methodology
 
-This document defines how to measure ZigViz against runc and gVisor. The goal is to produce repeatable, customer-trustworthy numbers.
+This document defines how to measure ZViz against runc and gVisor. The goal is to produce repeatable, customer-trustworthy numbers.
 
 ## Objectives
 
 - Measure CPU overhead, latency impact, memory overhead, and network throughput.
-- Compare outcomes across runc, gVisor, and ZigViz under the same workload.
+- Compare outcomes across runc, gVisor, and ZViz under the same workload.
 - Ensure results are reproducible and explainable.
 
 ## Test matrix
@@ -14,7 +14,7 @@ Runtimes:
 
 - runc (baseline)
 - gVisor (systrap and, if relevant, KVM)
-- ZigViz (high-density mode)
+- ZViz (high-density mode)
 
 Workloads:
 
@@ -60,10 +60,10 @@ Profiles:
 
 ## Success criteria (initial targets)
 
-- ZigViz CPU overhead <= 10% on syscall-heavy workloads.
-- ZigViz CPU overhead <= 5% on network-heavy workloads.
-- ZigViz memory overhead <= 3 MB per pod.
-- ZigViz p99 latency <= gVisor p99 for the same workload.
+- ZViz CPU overhead <= 10% on syscall-heavy workloads.
+- ZViz CPU overhead <= 5% on network-heavy workloads.
+- ZViz memory overhead <= 3 MB per pod.
+- ZViz p99 latency <= gVisor p99 for the same workload.
 - Policy outcomes match or exceed the defined policy scope.
 
 ## Related documents

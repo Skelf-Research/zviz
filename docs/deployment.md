@@ -1,6 +1,6 @@
 # Deployment Model
 
-ZigViz is designed to integrate with containerd and Kubernetes as a drop-in sandbox runtime. This document describes the intended operational model.
+ZViz is designed to integrate with containerd and Kubernetes as a drop-in sandbox runtime. This document describes the intended operational model.
 
 ## Artifact
 
@@ -10,16 +10,16 @@ ZigViz is designed to integrate with containerd and Kubernetes as a drop-in sand
 
 ## containerd integration (target)
 
-ZigViz implements the OCI runtime spec and uses containerd's runc v2 shim interface for compatibility. This allows drop-in integration without custom shim development.
+ZViz implements the OCI runtime spec and uses containerd's runc v2 shim interface for compatibility. This allows drop-in integration without custom shim development.
 
 Example runtime registration:
 
 ```toml
-[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.zigviz]
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.zviz]
   runtime_type = "io.containerd.runc.v2"  # Uses runc v2 shim interface
   privileged_without_host_devices = false
-  [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.zigviz.options]
-    BinaryName = "/usr/local/bin/zigviz"
+  [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.zviz.options]
+    BinaryName = "/usr/local/bin/zviz"
 ```
 
 Note: `runtime_type = "io.containerd.runc.v2"` specifies the shim interface, not the runtime binary. The actual runtime is set via `BinaryName`.
@@ -30,15 +30,15 @@ Note: `runtime_type = "io.containerd.runc.v2"` specifies the shim interface, not
 apiVersion: node.k8s.io/v1
 kind: RuntimeClass
 metadata:
-  name: zigviz
-handler: zigviz  # Matches the runtime name in containerd config
+  name: zviz
+handler: zviz  # Matches the runtime name in containerd config
 ```
 
 Workloads opt in via:
 
 ```yaml
 spec:
-  runtimeClassName: zigviz
+  runtimeClassName: zviz
 ```
 
 ## Profile selection

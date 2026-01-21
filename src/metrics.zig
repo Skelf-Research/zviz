@@ -1,7 +1,7 @@
 const std = @import("std");
 const log = @import("log.zig");
 
-/// Metrics collection for ZigViz runtime
+/// Metrics collection for ZViz runtime
 /// Provides Prometheus-compatible metrics export
 
 // ============================================================================
@@ -143,7 +143,7 @@ pub const Histogram = struct {
 // Runtime Metrics Collection
 // ============================================================================
 
-/// Global metrics for ZigViz runtime
+/// Global metrics for ZViz runtime
 pub const RuntimeMetrics = struct {
     // Container lifecycle
     containers_created: Counter,
@@ -173,30 +173,30 @@ pub const RuntimeMetrics = struct {
 
     pub fn init(allocator: std.mem.Allocator) !RuntimeMetrics {
         return .{
-            .containers_created = Counter.init("zigviz_containers_created_total", "Total containers created"),
-            .containers_started = Counter.init("zigviz_containers_started_total", "Total containers started"),
-            .containers_stopped = Counter.init("zigviz_containers_stopped_total", "Total containers stopped"),
-            .containers_deleted = Counter.init("zigviz_containers_deleted_total", "Total containers deleted"),
-            .containers_running = Gauge.init("zigviz_containers_running", "Currently running containers"),
+            .containers_created = Counter.init("zviz_containers_created_total", "Total containers created"),
+            .containers_started = Counter.init("zviz_containers_started_total", "Total containers started"),
+            .containers_stopped = Counter.init("zviz_containers_stopped_total", "Total containers stopped"),
+            .containers_deleted = Counter.init("zviz_containers_deleted_total", "Total containers deleted"),
+            .containers_running = Gauge.init("zviz_containers_running", "Currently running containers"),
 
-            .syscalls_brokered = Counter.init("zigviz_syscalls_brokered_total", "Total syscalls handled by broker"),
-            .syscalls_allowed = Counter.init("zigviz_syscalls_allowed_total", "Total syscalls allowed"),
-            .syscalls_denied = Counter.init("zigviz_syscalls_denied_total", "Total syscalls denied"),
-            .broker_timeouts = Counter.init("zigviz_broker_timeouts_total", "Total broker timeouts"),
+            .syscalls_brokered = Counter.init("zviz_syscalls_brokered_total", "Total syscalls handled by broker"),
+            .syscalls_allowed = Counter.init("zviz_syscalls_allowed_total", "Total syscalls allowed"),
+            .syscalls_denied = Counter.init("zviz_syscalls_denied_total", "Total syscalls denied"),
+            .broker_timeouts = Counter.init("zviz_broker_timeouts_total", "Total broker timeouts"),
             .broker_latency_us = try Histogram.init(
                 allocator,
-                "zigviz_broker_latency_microseconds",
+                "zviz_broker_latency_microseconds",
                 "Broker request latency in microseconds",
                 &Histogram.DEFAULT_BUCKETS,
             ),
 
-            .cgroup_memory_usage_bytes = Gauge.init("zigviz_cgroup_memory_usage_bytes", "Current cgroup memory usage"),
-            .cgroup_cpu_usage_us = Counter.init("zigviz_cgroup_cpu_usage_microseconds_total", "Total cgroup CPU usage"),
-            .cgroup_pids_current = Gauge.init("zigviz_cgroup_pids_current", "Current number of PIDs in cgroup"),
+            .cgroup_memory_usage_bytes = Gauge.init("zviz_cgroup_memory_usage_bytes", "Current cgroup memory usage"),
+            .cgroup_cpu_usage_us = Counter.init("zviz_cgroup_cpu_usage_microseconds_total", "Total cgroup CPU usage"),
+            .cgroup_pids_current = Gauge.init("zviz_cgroup_pids_current", "Current number of PIDs in cgroup"),
 
-            .errors_total = Counter.init("zigviz_errors_total", "Total errors"),
-            .seccomp_violations = Counter.init("zigviz_seccomp_violations_total", "Total seccomp violations"),
-            .network_violations = Counter.init("zigviz_network_violations_total", "Total network policy violations"),
+            .errors_total = Counter.init("zviz_errors_total", "Total errors"),
+            .seccomp_violations = Counter.init("zviz_seccomp_violations_total", "Total seccomp violations"),
+            .network_violations = Counter.init("zviz_network_violations_total", "Total network policy violations"),
 
             .allocator = allocator,
         };
@@ -404,6 +404,6 @@ test "runtime metrics export" {
     defer std.testing.allocator.free(output);
 
     try std.testing.expect(output.len > 0);
-    try std.testing.expect(std.mem.indexOf(u8, output, "zigviz_containers_created_total 1") != null);
-    try std.testing.expect(std.mem.indexOf(u8, output, "zigviz_syscalls_allowed_total 100") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "zviz_containers_created_total 1") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "zviz_syscalls_allowed_total 100") != null);
 }

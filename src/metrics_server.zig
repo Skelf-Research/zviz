@@ -128,9 +128,9 @@ pub const MetricsServer = struct {
         const body =
             \\<!DOCTYPE html>
             \\<html>
-            \\<head><title>ZigViz Metrics</title></head>
+            \\<head><title>ZViz Metrics</title></head>
             \\<body>
-            \\<h1>ZigViz Metrics Server</h1>
+            \\<h1>ZViz Metrics Server</h1>
             \\<ul>
             \\<li><a href="/metrics">/metrics</a> - Prometheus metrics</li>
             \\<li><a href="/health">/health</a> - Health check</li>

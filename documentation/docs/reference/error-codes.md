@@ -1,6 +1,6 @@
 # Error Codes
 
-ZigViz error codes and meanings.
+ZViz error codes and meanings.
 
 ## Exit Codes
 

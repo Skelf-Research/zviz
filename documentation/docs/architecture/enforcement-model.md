@@ -1,6 +1,6 @@
 # Enforcement Model
 
-ZigViz uses a five-layer enforcement model for defense in depth.
+ZViz uses a five-layer enforcement model for defense in depth.
 
 ## Layer Overview
 

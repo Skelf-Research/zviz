@@ -1,6 +1,6 @@
 # Performance
 
-ZigViz performance characteristics and benchmarks.
+ZViz performance characteristics and benchmarks.
 
 ## Overhead
 
@@ -14,7 +14,7 @@ ZigViz performance characteristics and benchmarks.
 ## Benchmarks
 
 ```bash
-zigviz benchmark
+zviz benchmark
 ```
 
 See [Performance Tuning](../operator-guide/performance.md).

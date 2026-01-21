@@ -1,6 +1,6 @@
 # Built-in Profiles
 
-ZigViz includes pre-configured profiles for common use cases.
+ZViz includes pre-configured profiles for common use cases.
 
 ## Available Profiles
 
@@ -19,7 +19,7 @@ ZigViz includes pre-configured profiles for common use cases.
 Maximum security profile with minimal permissions.
 
 ```bash
-zigviz run --profile minimal container . /bin/sh
+zviz run --profile minimal container . /bin/sh
 ```
 
 **Allows:**
@@ -37,7 +37,7 @@ zigviz run --profile minimal container . /bin/sh
 Optimized for CI/CD build workloads.
 
 ```bash
-zigviz run --profile ci-runner build . /bin/sh -c "npm install && npm test"
+zviz run --profile ci-runner build . /bin/sh -c "npm install && npm test"
 ```
 
 **Allows:**
@@ -55,7 +55,7 @@ zigviz run --profile ci-runner build . /bin/sh -c "npm install && npm test"
 For web application containers.
 
 ```bash
-zigviz run --profile web-server web . /usr/bin/nginx
+zviz run --profile web-server web . /usr/bin/nginx
 ```
 
 **Allows:**
@@ -72,7 +72,7 @@ zigviz run --profile web-server web . /usr/bin/nginx
 For database containers.
 
 ```bash
-zigviz run --profile database db . /usr/bin/postgres
+zviz run --profile database db . /usr/bin/postgres
 ```
 
 **Allows:**
@@ -88,13 +88,13 @@ zigviz run --profile database db . /usr/bin/postgres
 
 ```bash
 # List available profiles
-zigviz compile --list
+zviz compile --list
 
 # Show profile details
-zigviz compile --show ci-runner
+zviz compile --show ci-runner
 
 # Use a profile
-sudo zigviz run --profile ci-runner my-container . /bin/sh
+sudo zviz run --profile ci-runner my-container . /bin/sh
 ```
 
 ## Customizing Built-in Profiles

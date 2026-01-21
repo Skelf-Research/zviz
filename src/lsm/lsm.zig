@@ -65,7 +65,7 @@ fn checkLandlockSupport() bool {
 /// Apply LSM policy based on type
 pub fn applyPolicy(config: Config) !void {
     switch (config.type) {
-        .apparmor => try applyAppArmorProfile(config.profile_name orelse "zigviz-default"),
+        .apparmor => try applyAppArmorProfile(config.profile_name orelse "zviz-default"),
         .selinux => try applySELinuxContext(config.selinux_context orelse "system_u:system_r:container_t:s0"),
         .landlock => try applyLandlockRules(config.landlock_ruleset),
         .none => log.warn("No LSM available, object policy will be reduced", .{}),
@@ -77,7 +77,7 @@ fn applyAppArmorProfile(profile_name: []const u8) !void {
     log.info("Applying AppArmor profile: {s}", .{profile_name});
 
     // TODO: Phase 2 implementation
-    // 1. Load profile from /etc/apparmor.d/zigviz-{profile}
+    // 1. Load profile from /etc/apparmor.d/zviz-{profile}
     // 2. aa_change_profile() or write to /proc/self/attr/apparmor/current
 }
 
@@ -116,7 +116,7 @@ pub const LandlockAccess = struct {
     pub const fs_make_sym = 1 << 12;
 };
 
-/// Generate AppArmor profile from ZigViz profile
+/// Generate AppArmor profile from ZViz profile
 pub fn generateAppArmorProfile(
     allocator: std.mem.Allocator,
     profile_name: []const u8,
@@ -161,10 +161,10 @@ test "detect lsm" {
 test "generate apparmor profile" {
     const profile = try generateAppArmorProfile(
         std.testing.allocator,
-        "zigviz-test",
+        "zviz-test",
         &.{"/work"},
         &.{ "/usr", "/lib" },
     );
     defer std.testing.allocator.free(profile);
-    try std.testing.expect(std.mem.indexOf(u8, profile, "zigviz-test") != null);
+    try std.testing.expect(std.mem.indexOf(u8, profile, "zviz-test") != null);
 }

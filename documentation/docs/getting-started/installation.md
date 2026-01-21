@@ -1,20 +1,20 @@
 # Installation
 
-This guide covers installing ZigViz on various platforms.
+This guide covers installing ZViz on various platforms.
 
 ## Quick Install
 
-The fastest way to install ZigViz:
+The fastest way to install ZViz:
 
 ```bash
-curl -fsSL https://zigviz.io/install.sh | sh
+curl -fsSL https://zviz.io/install.sh | sh
 ```
 
 This script:
 
 1. Detects your architecture (x86_64 or aarch64)
 2. Downloads the latest release
-3. Installs to `/usr/local/bin/zigviz`
+3. Installs to `/usr/local/bin/zviz`
 4. Verifies the binary signature
 
 ## Manual Installation
@@ -26,28 +26,28 @@ Download the appropriate binary for your system:
 === "x86_64"
 
     ```bash
-    curl -LO https://github.com/zigviz/zigviz/releases/latest/download/zigviz-x86_64-linux-musl
-    chmod +x zigviz-x86_64-linux-musl
-    sudo mv zigviz-x86_64-linux-musl /usr/local/bin/zigviz
+    curl -LO https://github.com/zviz/zviz/releases/latest/download/zviz-x86_64-linux-musl
+    chmod +x zviz-x86_64-linux-musl
+    sudo mv zviz-x86_64-linux-musl /usr/local/bin/zviz
     ```
 
 === "aarch64"
 
     ```bash
-    curl -LO https://github.com/zigviz/zigviz/releases/latest/download/zigviz-aarch64-linux-musl
-    chmod +x zigviz-aarch64-linux-musl
-    sudo mv zigviz-aarch64-linux-musl /usr/local/bin/zigviz
+    curl -LO https://github.com/zviz/zviz/releases/latest/download/zviz-aarch64-linux-musl
+    chmod +x zviz-aarch64-linux-musl
+    sudo mv zviz-aarch64-linux-musl /usr/local/bin/zviz
     ```
 
 ### Verify Installation
 
 ```bash
-zigviz version
+zviz version
 ```
 
 Expected output:
 ```
-zigviz version 0.1.0
+zviz version 0.1.0
 zig version 0.15.2
 ```
 
@@ -62,14 +62,14 @@ zig version 0.15.2
 
 ```bash
 # Clone the repository
-git clone https://github.com/zigviz/zigviz.git
-cd zigviz
+git clone https://github.com/zviz/zviz.git
+cd zviz
 
 # Build release binary
 zig build -Doptimize=ReleaseSafe
 
 # Install
-sudo cp zig-out/bin/zigviz /usr/local/bin/
+sudo cp zig-out/bin/zviz /usr/local/bin/
 ```
 
 ### Build Options
@@ -96,23 +96,23 @@ zig build -Dtarget=aarch64-linux-musl -Doptimize=ReleaseSafe
 
 ```bash
 # Add repository
-curl -fsSL https://zigviz.io/gpg | sudo gpg --dearmor -o /usr/share/keyrings/zigviz.gpg
-echo "deb [signed-by=/usr/share/keyrings/zigviz.gpg] https://apt.zigviz.io stable main" | \
-  sudo tee /etc/apt/sources.list.d/zigviz.list
+curl -fsSL https://zviz.io/gpg | sudo gpg --dearmor -o /usr/share/keyrings/zviz.gpg
+echo "deb [signed-by=/usr/share/keyrings/zviz.gpg] https://apt.zviz.io stable main" | \
+  sudo tee /etc/apt/sources.list.d/zviz.list
 
 # Install
 sudo apt update
-sudo apt install zigviz
+sudo apt install zviz
 ```
 
 ### Fedora/RHEL
 
 ```bash
 # Add repository
-sudo dnf config-manager --add-repo https://rpm.zigviz.io/zigviz.repo
+sudo dnf config-manager --add-repo https://rpm.zviz.io/zviz.repo
 
 # Install
-sudo dnf install zigviz
+sudo dnf install zviz
 ```
 
 ### Container Image
@@ -120,7 +120,7 @@ sudo dnf install zigviz
 For containerized deployments:
 
 ```bash
-docker pull ghcr.io/zigviz/zigviz:latest
+docker pull ghcr.io/zviz/zviz:latest
 ```
 
 ## System Configuration
@@ -168,7 +168,7 @@ sudo systemctl start apparmor
 Run the validation suite to check your system:
 
 ```bash
-zigviz validate
+zviz validate
 ```
 
 Expected output:
@@ -181,7 +181,7 @@ Expected output:
 [PASS] AppArmor: enabled
 [PASS] Landlock: available (ABI v3)
 
-All checks passed! ZigViz is ready to use.
+All checks passed! ZViz is ready to use.
 ```
 
 ## Uninstallation
@@ -189,9 +189,9 @@ All checks passed! ZigViz is ready to use.
 ### Binary Install
 
 ```bash
-sudo rm /usr/local/bin/zigviz
-sudo rm -rf /var/lib/zigviz
-sudo rm -rf /etc/zigviz
+sudo rm /usr/local/bin/zviz
+sudo rm -rf /var/lib/zviz
+sudo rm -rf /etc/zviz
 ```
 
 ### Package Manager
@@ -199,13 +199,13 @@ sudo rm -rf /etc/zigviz
 === "Debian/Ubuntu"
 
     ```bash
-    sudo apt remove zigviz
+    sudo apt remove zviz
     ```
 
 === "Fedora/RHEL"
 
     ```bash
-    sudo dnf remove zigviz
+    sudo dnf remove zviz
     ```
 
 ## Next Steps

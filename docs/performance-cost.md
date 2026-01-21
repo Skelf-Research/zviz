@@ -28,11 +28,11 @@ This often translates to 20-40% fewer pods per node.
 
 gVisor KVM mode can change these numbers and should be measured separately.
 
-## ZigViz performance profile
+## ZViz performance profile
 
-ZigViz avoids syscall emulation and only mediates security-relevant syscalls. Performance targets:
+ZViz avoids syscall emulation and only mediates security-relevant syscalls. Performance targets:
 
-| Workload type | ZigViz overhead target |
+| Workload type | ZViz overhead target |
 | ------------- | ---------------------- |
 | Syscall-heavy | 5-10% CPU              |
 | Network-heavy | ~0-5% CPU              |
@@ -51,7 +51,7 @@ Assume a typical Kubernetes node:
 ### Density comparison
 
 - gVisor: effective 22-25 vCPUs, about 110 pods per node
-- ZigViz: effective 29-30 vCPUs, about 140-150 pods per node
+- ZViz: effective 29-30 vCPUs, about 140-150 pods per node
 
 That is roughly 25-35% higher density. For the same workload, node count can be reduced by a similar percentage.
 
@@ -60,7 +60,7 @@ That is roughly 25-35% higher density. For the same workload, node count can be 
 | Runtime     | Monthly compute cost (illustrative) |
 | ----------- | ----------------------------------- |
 | gVisor      | ~92,000 USD                         |
-| ZigViz      | ~68,000 USD                         |
+| ZViz      | ~68,000 USD                         |
 
 Approximate savings: 24,000 USD per month per 100 nodes (about 288,000 USD per year) when the node count is reduced to match workload demand.
 
@@ -69,14 +69,14 @@ Approximate savings: 24,000 USD per month per 100 nodes (about 288,000 USD per y
 Per-pod RSS ranges:
 
 - gVisor: 20-50 MB (runtime + userspace kernel + netstack buffers)
-- ZigViz: 1-3 MB (target, static binary, no runtime, no netstack)
+- ZViz: 1-3 MB (target, static binary, no runtime, no netstack)
 
 At 150 pods per node:
 
 | Runtime     | Memory used |
 | ----------- | ----------- |
 | gVisor      | 3-7.5 GB    |
-| ZigViz      | ~300 MB     |
+| ZViz      | ~300 MB     |
 
 This can reduce OOM pressure, enable smaller instance types, and improve bin-packing efficiency.
 
@@ -92,7 +92,7 @@ These effects are most visible in CI systems, serverless platforms, and multi-te
 
 ## Networking performance
 
-gVisor runs a userspace TCP/IP stack. ZigViz uses the host kernel networking stack with namespace isolation and BPF controls. Target deltas:
+gVisor runs a userspace TCP/IP stack. ZViz uses the host kernel networking stack with namespace isolation and BPF controls. Target deltas:
 
 - 2-4x higher throughput
 - lower connection setup latency
@@ -105,7 +105,7 @@ gVisor runs a userspace TCP/IP stack. ZigViz uses the host kernel networking sta
 
 ## Summary table
 
-| Dimension      | gVisor        | ZigViz        |
+| Dimension      | gVisor        | ZViz        |
 | -------------- | ------------- | ------------ |
 | CPU overhead   | High          | Low          |
 | Pod density    | Lower         | +25-35%      |
@@ -119,7 +119,7 @@ gVisor runs a userspace TCP/IP stack. ZigViz uses the host kernel networking sta
 
 - Choose a benchmark suite (CI builds are a good starting point).
 - Define measurement methodology and success criteria in `docs/benchmark-methodology.md`.
-- Publish side-by-side results: runc vs gVisor vs ZigViz.
+- Publish side-by-side results: runc vs gVisor vs ZViz.
 
 ## Related documents
 

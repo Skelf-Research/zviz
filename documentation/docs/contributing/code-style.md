@@ -1,6 +1,6 @@
 # Code Style
 
-ZigViz code conventions.
+ZViz code conventions.
 
 ## Formatting
 

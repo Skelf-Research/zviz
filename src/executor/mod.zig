@@ -1,4 +1,4 @@
-//! ZigViz Container Executor Module
+//! ZViz Container Executor Module
 //!
 //! This module provides the complete container execution infrastructure:
 //! - Process creation with fork/clone and namespaces

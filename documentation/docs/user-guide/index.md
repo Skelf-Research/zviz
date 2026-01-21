@@ -1,10 +1,10 @@
 # User Guide
 
-This guide covers everything you need to know to use ZigViz effectively.
+This guide covers everything you need to know to use ZViz effectively.
 
 ## Overview
 
-ZigViz uses **security profiles** to define what containers can and cannot do. Profiles are declarative YAML files that get compiled into enforcement rules for the kernel.
+ZViz uses **security profiles** to define what containers can and cannot do. Profiles are declarative YAML files that get compiled into enforcement rules for the kernel.
 
 ## Key Concepts
 
@@ -41,7 +41,7 @@ resources:
 
 ### Enforcement Layers
 
-ZigViz applies five enforcement layers:
+ZViz applies five enforcement layers:
 
 | Layer | Mechanism | What it Controls |
 |-------|-----------|------------------|
@@ -53,7 +53,7 @@ ZigViz applies five enforcement layers:
 
 ### The Broker
 
-For syscalls that need argument inspection (like `openat`), ZigViz uses a broker process that:
+For syscalls that need argument inspection (like `openat`), ZViz uses a broker process that:
 
 1. Receives the syscall via `SECCOMP_RET_USER_NOTIF`
 2. Validates arguments against the profile
@@ -111,33 +111,33 @@ For syscalls that need argument inspection (like `openat`), ZigViz uses a broker
 
 ```bash
 # CI runner profile - optimized for build workloads
-sudo zigviz run --profile ci-runner build-job . /bin/sh -c "npm install && npm test"
+sudo zviz run --profile ci-runner build-job . /bin/sh -c "npm install && npm test"
 
 # Minimal profile - maximum security
-sudo zigviz run --profile minimal restricted-job . /bin/sh -c "cat /etc/passwd"
+sudo zviz run --profile minimal restricted-job . /bin/sh -c "cat /etc/passwd"
 ```
 
 ### Run with Custom Profile
 
 ```bash
 # Compile your profile
-zigviz compile my-profile.yaml
+zviz compile my-profile.yaml
 
 # Run with the profile
-sudo zigviz run --profile my-profile custom-job . /bin/sh -c "my-app"
+sudo zviz run --profile my-profile custom-job . /bin/sh -c "my-app"
 ```
 
 ### Run with Inline Options
 
 ```bash
 # Resource limits
-sudo zigviz run --memory 256M --cpus 0.5 limited-job . /bin/sh
+sudo zviz run --memory 256M --cpus 0.5 limited-job . /bin/sh
 
 # Network restrictions
-sudo zigviz run --network-allow 10.0.0.0/8 internal-job . /bin/sh
+sudo zviz run --network-allow 10.0.0.0/8 internal-job . /bin/sh
 
 # Read-only filesystem with specific writable paths
-sudo zigviz run --readonly --writable /tmp job . /bin/sh
+sudo zviz run --readonly --writable /tmp job . /bin/sh
 ```
 
 ## Common Workflows
@@ -146,17 +146,17 @@ sudo zigviz run --readonly --writable /tmp job . /bin/sh
 
 ```bash
 # Quick iteration with debug logging
-sudo zigviz --log-level debug run dev-container . /bin/sh
+sudo zviz --log-level debug run dev-container . /bin/sh
 
 # With audit mode to see what's being blocked
-sudo zigviz run --audit dev-container . /bin/sh
+sudo zviz run --audit dev-container . /bin/sh
 ```
 
 ### CI/CD
 
 ```bash
 # Run a build with strict isolation
-sudo zigviz run \
+sudo zviz run \
   --profile ci-runner \
   --memory 2G \
   --timeout 30m \
@@ -168,7 +168,7 @@ sudo zigviz run \
 ```bash
 # Multi-container workload
 for i in $(seq 1 10); do
-  sudo zigviz run \
+  sudo zviz run \
     --profile web-server \
     --detach \
     web-$i . /bin/sh -c "nginx -g 'daemon off;'"
@@ -201,26 +201,26 @@ syscalls:
 Built-in profiles are tested and optimized:
 
 ```bash
-zigviz compile --list  # See available profiles
+zviz compile --list  # See available profiles
 ```
 
 ### 3. Enable Audit Mode During Development
 
 ```bash
-sudo zigviz run --audit my-container . /bin/sh
-# Review /var/log/zigviz/audit.json
+sudo zviz run --audit my-container . /bin/sh
+# Review /var/log/zviz/audit.json
 ```
 
 ### 4. Validate Profiles Before Deployment
 
 ```bash
-zigviz compile --validate my-profile.yaml
+zviz compile --validate my-profile.yaml
 ```
 
 ### 5. Monitor Resource Usage
 
 ```bash
-zigviz metrics
+zviz metrics
 # Or via Prometheus endpoint
 curl http://localhost:9090/metrics
 ```
@@ -228,5 +228,5 @@ curl http://localhost:9090/metrics
 ## Getting Help
 
 - [Troubleshooting Guide](troubleshooting.md)
-- [GitHub Issues](https://github.com/zigviz/zigviz/issues)
+- [GitHub Issues](https://github.com/zviz/zviz/issues)
 - [Architecture Overview](../architecture/index.md)

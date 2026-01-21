@@ -1,6 +1,6 @@
 # Security Advisories
 
-Published security advisories for ZigViz.
+Published security advisories for ZViz.
 
 ## 2024
 

@@ -1,4 +1,4 @@
-# ZigViz Examples
+# ZViz Examples
 
 Ready-to-use examples for common deployment scenarios.
 
@@ -9,10 +9,10 @@ Ready-to-use examples for common deployment scenarios.
 kubectl apply -f kubernetes/ci-runner-job.yaml
 
 # Docker - Run with security profile
-docker run --runtime=zigviz alpine sh
+docker run --runtime=zviz alpine sh
 
 # Standalone - Run with custom profile
-zigviz run --profile ci-runner my-container . /bin/sh
+zviz run --profile ci-runner my-container . /bin/sh
 ```
 
 ## Examples by Use Case
@@ -50,8 +50,8 @@ zigviz run --profile ci-runner my-container . /bin/sh
 
 | File | Description |
 |------|-------------|
-| `docker/docker-compose.yaml` | Multi-service example with ZigViz |
-| `docker/Dockerfile.secure` | Best practices Dockerfile for ZigViz |
+| `docker/docker-compose.yaml` | Multi-service example with ZViz |
+| `docker/Dockerfile.secure` | Best practices Dockerfile for ZViz |
 | `docker/README.md` | Docker usage guide |
 
 ## Directory Structure
@@ -95,11 +95,11 @@ kubectl logs -l app=ci-runner
 
 ```bash
 # Compile a profile
-zigviz compile profiles/ci-runner.yaml
+zviz compile profiles/ci-runner.yaml
 
 # Use in Kubernetes via annotation
 # annotations:
-#   zigviz.io/profile: "ci-runner"
+#   zviz.io/profile: "ci-runner"
 ```
 
 ## See Also

@@ -1,5 +1,5 @@
 .{
-    .name = .zigviz,
+    .name = .zviz,
     .version = "0.1.0",
     .fingerprint = 0x7d3b09acddf0e593,
 

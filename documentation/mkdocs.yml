@@ -1,10 +1,10 @@
-site_name: ZigViz Documentation
+site_name: ZViz Documentation
 site_description: High-performance container isolation runtime with gVisor-grade security
-site_author: ZigViz Contributors
-site_url: https://zigviz.io/docs
+site_author: ZViz Contributors
+site_url: https://zviz.io/docs
 
-repo_name: zigviz/zigviz
-repo_url: https://github.com/zigviz/zigviz
+repo_name: zviz/zviz
+repo_url: https://github.com/zviz/zviz
 edit_uri: edit/main/documentation/docs/
 
 theme:
@@ -85,7 +85,7 @@ markdown_extensions:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/zigviz/zigviz
+      link: https://github.com/zviz/zviz
   version:
     provider: mike
   analytics:

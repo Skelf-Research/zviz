@@ -11,8 +11,8 @@ Set up your development environment.
 ## Setup
 
 ```bash
-git clone https://github.com/zigviz/zigviz.git
-cd zigviz
+git clone https://github.com/zviz/zviz.git
+cd zviz
 zig build
 zig build test
 ```

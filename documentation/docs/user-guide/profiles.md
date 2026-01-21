@@ -1,6 +1,6 @@
 # Security Profiles
 
-Profiles are the core configuration mechanism in ZigViz. They define what a container can and cannot do, and how resources are limited.
+Profiles are the core configuration mechanism in ZViz. They define what a container can and cannot do, and how resources are limited.
 
 ## What is a Profile?
 
@@ -267,7 +267,7 @@ Profiles are compiled into enforcement artifacts:
 
 ```bash
 # Compile a profile
-zigviz compile my-profile.yaml
+zviz compile my-profile.yaml
 
 # Output files
 my-profile.bpf       # Seccomp BPF program
@@ -283,10 +283,10 @@ Validate profiles before use:
 
 ```bash
 # Check syntax and semantics
-zigviz compile --validate my-profile.yaml
+zviz compile --validate my-profile.yaml
 
 # Check against host capabilities
-zigviz compile --check-host my-profile.yaml
+zviz compile --check-host my-profile.yaml
 ```
 
 ## Best Practices
@@ -325,10 +325,10 @@ syscalls:
 
 ```bash
 # Run with audit mode to discover required syscalls
-sudo zigviz run --audit --profile my-profile container . /bin/my-app
+sudo zviz run --audit --profile my-profile container . /bin/my-app
 
 # Review audit log
-jq '.[] | select(.decision == "denied")' /var/log/zigviz/audit.json
+jq '.[] | select(.decision == "denied")' /var/log/zviz/audit.json
 ```
 
 ### 4. Document Your Profile

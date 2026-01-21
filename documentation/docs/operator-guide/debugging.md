@@ -1,11 +1,11 @@
 # Debugging Guide
 
-Troubleshoot ZigViz issues in production.
+Troubleshoot ZViz issues in production.
 
 ## Debug Logging
 
 ```bash
-zigviz --log-level debug run ...
+zviz --log-level debug run ...
 ```
 
 ## Common Issues
@@ -13,12 +13,12 @@ zigviz --log-level debug run ...
 ### Container Won't Start
 
 1. Check containerd logs: `journalctl -u containerd`
-2. Check ZigViz logs: `/var/log/zigviz/`
-3. Verify profile: `zigviz compile --validate`
+2. Check ZViz logs: `/var/log/zviz/`
+3. Verify profile: `zviz compile --validate`
 
 ### Performance Problems
 
-1. Check metrics: `zigviz metrics`
+1. Check metrics: `zviz metrics`
 2. Review broker latency
 3. Check for excessive brokered syscalls
 

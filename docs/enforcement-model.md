@@ -1,6 +1,6 @@
 # Enforcement Model
 
-ZigViz enforces policy by composing multiple kernel mechanisms with a minimal Zig broker. The objective is deny-by-default at every layer. Policy outcomes are defined in `docs/threat-model.md`.
+ZViz enforces policy by composing multiple kernel mechanisms with a minimal Zig broker. The objective is deny-by-default at every layer. Policy outcomes are defined in `docs/threat-model.md`.
 
 ## Layer A: Containment
 
@@ -39,7 +39,7 @@ Seccomp answers “can you call this syscall.” LSMs answer “can you touch th
 
 ## Outcome equivalence
 
-By combining these layers, ZigViz can reach the same policy outcomes that gVisor enforces through userspace syscall interposition, without emulating Linux.
+By combining these layers, ZViz can reach the same policy outcomes that gVisor enforces through userspace syscall interposition, without emulating Linux.
 
 ## Related documents
 

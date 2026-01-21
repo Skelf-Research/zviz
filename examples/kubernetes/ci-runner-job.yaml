@@ -1,6 +1,6 @@
-# CI Runner Job with ZigViz
+# CI Runner Job with ZViz
 #
-# This example runs a build job in a ZigViz-isolated container.
+# This example runs a build job in a ZViz-isolated container.
 # The CI runner profile allows file system access and network to
 # internal registries while blocking dangerous syscalls.
 #
@@ -24,12 +24,12 @@ spec:
         app: ci-runner
       annotations:
         # Use CI runner security profile
-        zigviz.io/profile: "ci-runner"
+        zviz.io/profile: "ci-runner"
         # Enable audit logging for debugging
-        zigviz.io/audit: "true"
+        zviz.io/audit: "true"
     spec:
-      # Use ZigViz runtime
-      runtimeClassName: zigviz
+      # Use ZViz runtime
+      runtimeClassName: zviz
 
       restartPolicy: Never
 

@@ -1,7 +1,7 @@
 const std = @import("std");
 const log = @import("../log.zig");
 
-/// Performance Benchmark Suite for ZigViz
+/// Performance Benchmark Suite for ZViz
 /// Measures overhead and latency characteristics
 
 // ============================================================================
@@ -35,13 +35,13 @@ pub const BenchmarkResult = struct {
 
     pub fn toPrometheus(self: *const BenchmarkResult, allocator: std.mem.Allocator) ![]u8 {
         return std.fmt.allocPrint(allocator,
-            \\# HELP zigviz_benchmark_{s}_ns Benchmark latency in nanoseconds
-            \\# TYPE zigviz_benchmark_{s}_ns summary
-            \\zigviz_benchmark_{s}_ns{{quantile="0.5"}} {d}
-            \\zigviz_benchmark_{s}_ns{{quantile="0.95"}} {d}
-            \\zigviz_benchmark_{s}_ns{{quantile="0.99"}} {d}
-            \\zigviz_benchmark_{s}_ns_sum {d}
-            \\zigviz_benchmark_{s}_ns_count {d}
+            \\# HELP zviz_benchmark_{s}_ns Benchmark latency in nanoseconds
+            \\# TYPE zviz_benchmark_{s}_ns summary
+            \\zviz_benchmark_{s}_ns{{quantile="0.5"}} {d}
+            \\zviz_benchmark_{s}_ns{{quantile="0.95"}} {d}
+            \\zviz_benchmark_{s}_ns{{quantile="0.99"}} {d}
+            \\zviz_benchmark_{s}_ns_sum {d}
+            \\zviz_benchmark_{s}_ns_count {d}
             \\
         , .{
             self.name, self.name,
@@ -296,7 +296,7 @@ pub const BenchmarkSuite = struct {
     }
 
     pub fn printAll(self: *const BenchmarkSuite) void {
-        log.info("=== ZigViz Benchmark Results ===", .{});
+        log.info("=== ZViz Benchmark Results ===", .{});
 
         log.info("\n--- Syscall Latency ---", .{});
         for (self.syscall_results) |result| {
@@ -323,9 +323,9 @@ pub const BenchmarkSuite = struct {
 
         // Memory metrics
         try buf.writer(allocator).print(
-            \\# HELP zigviz_memory_rss_bytes Resident set size
-            \\# TYPE zigviz_memory_rss_bytes gauge
-            \\zigviz_memory_rss_bytes {d}
+            \\# HELP zviz_memory_rss_bytes Resident set size
+            \\# TYPE zviz_memory_rss_bytes gauge
+            \\zviz_memory_rss_bytes {d}
             \\
         , .{self.memory_stats.rss_bytes});
 

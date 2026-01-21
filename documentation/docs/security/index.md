@@ -1,10 +1,10 @@
 # Security Policy
 
-This document outlines ZigViz's security policies, practices, and how to report vulnerabilities.
+This document outlines ZViz's security policies, practices, and how to report vulnerabilities.
 
 ## Security Model
 
-ZigViz provides defense-in-depth through five enforcement layers:
+ZViz provides defense-in-depth through five enforcement layers:
 
 | Layer | Mechanism | Protection |
 |-------|-----------|------------|
@@ -28,7 +28,7 @@ ZigViz provides defense-in-depth through five enforcement layers:
 ├─────────────────────────────────────────────────┤
 │                   Trusted                        │
 │  ┌───────────────────────────────────────────┐  │
-│  │              ZigViz Broker                 │  │
+│  │              ZViz Broker                 │  │
 │  └───────────────────────────────────────────┘  │
 │  ┌───────────────────────────────────────────┐  │
 │  │              Host Kernel                   │  │
@@ -40,7 +40,7 @@ ZigViz provides defense-in-depth through five enforcement layers:
 
 ### In Scope
 
-ZigViz protects against:
+ZViz protects against:
 
 - **Container escape** via syscall exploitation
 - **Resource exhaustion** attacks (fork bombs, memory exhaustion)
@@ -50,7 +50,7 @@ ZigViz protects against:
 
 ### Out of Scope
 
-ZigViz does NOT protect against:
+ZViz does NOT protect against:
 
 - **Kernel vulnerabilities** — The host kernel is trusted
 - **Hardware attacks** — Side-channel, speculative execution
@@ -58,7 +58,7 @@ ZigViz does NOT protect against:
 - **Social engineering** — Misconfigurated policies
 
 !!! warning "Hostile Tenants"
-    For environments with hostile tenants who may attempt kernel exploits, deploy ZigViz inside a microVM boundary (Firecracker, Cloud Hypervisor).
+    For environments with hostile tenants who may attempt kernel exploits, deploy ZViz inside a microVM boundary (Firecracker, Cloud Hypervisor).
 
 ## Supported Versions
 
@@ -88,7 +88,7 @@ Security updates are released as:
 
 **DO NOT** report security vulnerabilities through public GitHub issues.
 
-Instead, please email: **security@zigviz.io**
+Instead, please email: **security@zviz.io**
 
 Include:
 
@@ -111,7 +111,7 @@ We currently do not offer a formal bug bounty program, but we do provide:
 
 - Public acknowledgment (with permission)
 - CVE credit
-- ZigViz swag for significant findings
+- ZViz swag for significant findings
 
 ### Response Timeline
 
@@ -128,14 +128,14 @@ We currently do not offer a formal bug bounty program, but we do provide:
 
 1. **Use restrictive profiles** — Start minimal, add permissions as needed
 2. **Enable audit logging** — Monitor for suspicious activity
-3. **Keep ZigViz updated** — Apply security patches promptly
+3. **Keep ZViz updated** — Apply security patches promptly
 4. **Validate container images** — Scan for vulnerabilities
 5. **Use read-only rootfs** — Reduce attack surface
 
 ### For Operators
 
-1. **Network segmentation** — Isolate ZigViz nodes
-2. **Least privilege** — Run ZigViz with minimal permissions
+1. **Network segmentation** — Isolate ZViz nodes
+2. **Least privilege** — Run ZViz with minimal permissions
 3. **Centralized logging** — Aggregate and analyze audit logs
 4. **Regular security scans** — Audit configurations
 5. **Incident response plan** — Prepare for security events
@@ -164,7 +164,7 @@ We plan to conduct external security audits before major releases.
 
 ## Compliance
 
-ZigViz supports compliance requirements:
+ZViz supports compliance requirements:
 
 | Standard | Support |
 |----------|---------|
@@ -185,16 +185,16 @@ See the [Hardening Guide](hardening.md) for:
 
 ## Known Limitations
 
-1. **Kernel trust** — ZigViz trusts the host kernel
+1. **Kernel trust** — ZViz trusts the host kernel
 2. **Clock access** — Containers can read system time
 3. **CPU timing** — No protection against timing attacks
 4. **Memory limits** — OOM killer may affect host
 
 ## Security Contacts
 
-- **Security Team**: security@zigviz.io
-- **Maintainers**: maintainers@zigviz.io
-- **General**: hello@zigviz.io
+- **Security Team**: security@zviz.io
+- **Maintainers**: maintainers@zviz.io
+- **General**: hello@zviz.io
 
 ## See Also
 

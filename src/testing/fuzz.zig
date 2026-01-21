@@ -4,7 +4,7 @@ const network = @import("../network/network.zig");
 const cgroup = @import("../cgroup/cgroup.zig");
 const schema = @import("../schema/schema.zig");
 
-/// Fuzzing and property-based testing utilities for ZigViz
+/// Fuzzing and property-based testing utilities for ZViz
 
 // ============================================================================
 // BPF Filter Fuzzing

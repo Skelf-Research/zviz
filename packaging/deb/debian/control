@@ -1,0 +1,28 @@
+Source: zviz
+Section: admin
+Priority: optional
+Maintainer: Skelf Research <team@skelf.io>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.6.0
+Homepage: https://github.com/Skelf-Research/zviz
+Vcs-Browser: https://github.com/Skelf-Research/zviz
+Vcs-Git: https://github.com/Skelf-Research/zviz.git
+Rules-Requires-Root: no
+
+Package: zviz
+Architecture: amd64 arm64
+Depends: ${misc:Depends}
+Recommends: containerd (>= 1.6)
+Suggests: apparmor
+Description: High-performance container isolation runtime
+ ZViz is a Zig-based container runtime that delivers gVisor-grade
+ security with near-native performance. It uses layered kernel
+ enforcement (namespaces, seccomp, LSMs, cgroups) instead of
+ syscall emulation.
+ .
+ Features:
+  - gVisor-equivalent policy outcomes
+  - Less than 5% overhead for network workloads
+  - Kubernetes RuntimeClass integration
+  - Profile-driven security policies
+  - Small memory footprint (+2MB vs +50MB for gVisor)

@@ -1,6 +1,6 @@
 # Testing
 
-Testing guidelines for ZigViz.
+Testing guidelines for ZViz.
 
 ## Running Tests
 
@@ -15,7 +15,7 @@ zig build test-integration
 zig build test-all
 
 # Security tests
-sudo ./zig-out/bin/zigviz escape-test
+sudo ./zig-out/bin/zviz escape-test
 ```
 
 ## Writing Tests

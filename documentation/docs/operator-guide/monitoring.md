@@ -1,17 +1,17 @@
 # Monitoring
 
-This guide covers monitoring ZigViz in production using Prometheus metrics and structured logging.
+This guide covers monitoring ZViz in production using Prometheus metrics and structured logging.
 
 ## Metrics Overview
 
-ZigViz exposes Prometheus-format metrics at `/metrics`:
+ZViz exposes Prometheus-format metrics at `/metrics`:
 
 ```bash
 # Start metrics server
-zigviz metrics serve --addr 0.0.0.0:9090
+zviz metrics serve --addr 0.0.0.0:9090
 
 # Or export to stdout
-zigviz metrics
+zviz metrics
 ```
 
 ## Available Metrics
@@ -20,37 +20,37 @@ zigviz metrics
 
 | Metric | Type | Description |
 |--------|------|-------------|
-| `zigviz_broker_requests_total` | Counter | Total broker requests |
-| `zigviz_broker_decisions_total` | Counter | Decisions by syscall and outcome |
-| `zigviz_broker_latency_seconds` | Histogram | Request latency |
-| `zigviz_broker_inflight` | Gauge | Current in-flight requests |
-| `zigviz_broker_errors_total` | Counter | Broker errors |
+| `zviz_broker_requests_total` | Counter | Total broker requests |
+| `zviz_broker_decisions_total` | Counter | Decisions by syscall and outcome |
+| `zviz_broker_latency_seconds` | Histogram | Request latency |
+| `zviz_broker_inflight` | Gauge | Current in-flight requests |
+| `zviz_broker_errors_total` | Counter | Broker errors |
 
 ### Container Metrics
 
 | Metric | Type | Description |
 |--------|------|-------------|
-| `zigviz_containers_total` | Gauge | Total containers |
-| `zigviz_containers_by_state` | Gauge | Containers by state |
-| `zigviz_container_uptime_seconds` | Gauge | Container uptime |
-| `zigviz_container_restarts_total` | Counter | Container restarts |
+| `zviz_containers_total` | Gauge | Total containers |
+| `zviz_containers_by_state` | Gauge | Containers by state |
+| `zviz_container_uptime_seconds` | Gauge | Container uptime |
+| `zviz_container_restarts_total` | Counter | Container restarts |
 
 ### Security Metrics
 
 | Metric | Type | Description |
 |--------|------|-------------|
-| `zigviz_security_denials_total` | Counter | Security denials by layer |
-| `zigviz_seccomp_violations_total` | Counter | Seccomp violations |
-| `zigviz_audit_events_total` | Counter | Audit events by type |
+| `zviz_security_denials_total` | Counter | Security denials by layer |
+| `zviz_seccomp_violations_total` | Counter | Seccomp violations |
+| `zviz_audit_events_total` | Counter | Audit events by type |
 
 ### Resource Metrics
 
 | Metric | Type | Description |
 |--------|------|-------------|
-| `zigviz_memory_usage_bytes` | Gauge | Memory usage per container |
-| `zigviz_cpu_usage_seconds` | Counter | CPU usage per container |
-| `zigviz_io_read_bytes_total` | Counter | I/O read bytes |
-| `zigviz_io_write_bytes_total` | Counter | I/O write bytes |
+| `zviz_memory_usage_bytes` | Gauge | Memory usage per container |
+| `zviz_cpu_usage_seconds` | Counter | CPU usage per container |
+| `zviz_io_read_bytes_total` | Counter | I/O read bytes |
+| `zviz_io_write_bytes_total` | Counter | I/O write bytes |
 
 ## Prometheus Configuration
 
@@ -59,7 +59,7 @@ zigviz metrics
 ```yaml
 # prometheus.yml
 scrape_configs:
-  - job_name: 'zigviz'
+  - job_name: 'zviz'
     static_configs:
       - targets: ['localhost:9090']
     scrape_interval: 15s
@@ -71,7 +71,7 @@ scrape_configs:
 ```yaml
 # prometheus.yml
 scrape_configs:
-  - job_name: 'zigviz'
+  - job_name: 'zviz'
     kubernetes_sd_configs:
       - role: pod
     relabel_configs:
@@ -90,21 +90,21 @@ scrape_configs:
 ### Critical Alerts
 
 ```yaml
-# zigviz-alerts.yml
+# zviz-alerts.yml
 groups:
-  - name: zigviz.critical
+  - name: zviz.critical
     rules:
-      - alert: ZigVizBrokerDown
-        expr: up{job="zigviz"} == 0
+      - alert: ZVizBrokerDown
+        expr: up{job="zviz"} == 0
         for: 1m
         labels:
           severity: critical
         annotations:
-          summary: "ZigViz broker is down"
-          description: "ZigViz broker on {{ $labels.instance }} is not responding"
+          summary: "ZViz broker is down"
+          description: "ZViz broker on {{ $labels.instance }} is not responding"
 
-      - alert: ZigVizSecurityViolation
-        expr: rate(zigviz_security_denials_total[5m]) > 10
+      - alert: ZVizSecurityViolation
+        expr: rate(zviz_security_denials_total[5m]) > 10
         for: 5m
         labels:
           severity: critical
@@ -112,8 +112,8 @@ groups:
           summary: "High rate of security denials"
           description: "{{ $value }} security denials per second"
 
-      - alert: ZigVizBrokerLatencyHigh
-        expr: histogram_quantile(0.99, rate(zigviz_broker_latency_seconds_bucket[5m])) > 0.01
+      - alert: ZVizBrokerLatencyHigh
+        expr: histogram_quantile(0.99, rate(zviz_broker_latency_seconds_bucket[5m])) > 0.01
         for: 10m
         labels:
           severity: warning
@@ -126,18 +126,18 @@ groups:
 
 ```yaml
 groups:
-  - name: zigviz.warning
+  - name: zviz.warning
     rules:
-      - alert: ZigVizHighInflight
-        expr: zigviz_broker_inflight > 200
+      - alert: ZVizHighInflight
+        expr: zviz_broker_inflight > 200
         for: 5m
         labels:
           severity: warning
         annotations:
           summary: "High number of in-flight broker requests"
 
-      - alert: ZigVizErrorRate
-        expr: rate(zigviz_broker_errors_total[5m]) > 1
+      - alert: ZVizErrorRate
+        expr: rate(zviz_broker_errors_total[5m]) > 1
         for: 5m
         labels:
           severity: warning
@@ -149,18 +149,18 @@ groups:
 
 ### Overview Dashboard
 
-Import the ZigViz overview dashboard:
+Import the ZViz overview dashboard:
 
 ```json
 {
   "dashboard": {
-    "title": "ZigViz Overview",
+    "title": "ZViz Overview",
     "panels": [
       {
         "title": "Broker Requests/sec",
         "targets": [
           {
-            "expr": "rate(zigviz_broker_requests_total[5m])"
+            "expr": "rate(zviz_broker_requests_total[5m])"
           }
         ]
       },
@@ -168,7 +168,7 @@ Import the ZigViz overview dashboard:
         "title": "Broker Latency (p99)",
         "targets": [
           {
-            "expr": "histogram_quantile(0.99, rate(zigviz_broker_latency_seconds_bucket[5m]))"
+            "expr": "histogram_quantile(0.99, rate(zviz_broker_latency_seconds_bucket[5m]))"
           }
         ]
       },
@@ -176,7 +176,7 @@ Import the ZigViz overview dashboard:
         "title": "Security Denials",
         "targets": [
           {
-            "expr": "rate(zigviz_security_denials_total[5m])"
+            "expr": "rate(zviz_security_denials_total[5m])"
           }
         ]
       },
@@ -184,7 +184,7 @@ Import the ZigViz overview dashboard:
         "title": "Active Containers",
         "targets": [
           {
-            "expr": "zigviz_containers_by_state{state=\"running\"}"
+            "expr": "zviz_containers_by_state{state=\"running\"}"
           }
         ]
       }
@@ -195,25 +195,25 @@ Import the ZigViz overview dashboard:
 
 ### Key Panels
 
-1. **Request Rate** — `rate(zigviz_broker_requests_total[5m])`
+1. **Request Rate** — `rate(zviz_broker_requests_total[5m])`
 2. **Latency Percentiles** — `histogram_quantile(0.99, ...)`
-3. **Decision Breakdown** — `sum by (decision) (rate(zigviz_broker_decisions_total[5m]))`
-4. **Error Rate** — `rate(zigviz_broker_errors_total[5m])`
-5. **Container Count** — `zigviz_containers_total`
+3. **Decision Breakdown** — `sum by (decision) (rate(zviz_broker_decisions_total[5m]))`
+4. **Error Rate** — `rate(zviz_broker_errors_total[5m])`
+5. **Container Count** — `zviz_containers_total`
 
 ## Logging
 
 ### Log Configuration
 
 ```yaml
-# /etc/zigviz/config.yaml
+# /etc/zviz/config.yaml
 logging:
   level: info          # debug, info, warn, error
   format: json         # text, json
-  output: /var/log/zigviz/zigviz.log
+  output: /var/log/zviz/zviz.log
   audit:
     enabled: true
-    path: /var/log/zigviz/audit.json
+    path: /var/log/zviz/audit.json
 ```
 
 ### Log Format
@@ -255,19 +255,19 @@ logging:
 # fluentd.conf
 <source>
   @type tail
-  path /var/log/zigviz/*.json
-  pos_file /var/log/fluentd/zigviz.pos
-  tag zigviz
+  path /var/log/zviz/*.json
+  pos_file /var/log/fluentd/zviz.pos
+  tag zviz
   <parse>
     @type json
   </parse>
 </source>
 
-<match zigviz>
+<match zviz>
   @type elasticsearch
   host elasticsearch
   port 9200
-  index_name zigviz
+  index_name zviz
 </match>
 ```
 
@@ -276,13 +276,13 @@ logging:
 ```yaml
 # promtail.yaml
 scrape_configs:
-  - job_name: zigviz
+  - job_name: zviz
     static_configs:
       - targets:
           - localhost
         labels:
-          job: zigviz
-          __path__: /var/log/zigviz/*.json
+          job: zviz
+          __path__: /var/log/zviz/*.json
     pipeline_stages:
       - json:
           expressions:
@@ -344,10 +344,10 @@ readinessProbe:
 
 ```yaml
 groups:
-  - name: zigviz.rules
+  - name: zviz.rules
     rules:
-      - record: zigviz:broker_latency:p99
-        expr: histogram_quantile(0.99, rate(zigviz_broker_latency_seconds_bucket[5m]))
+      - record: zviz:broker_latency:p99
+        expr: histogram_quantile(0.99, rate(zviz_broker_latency_seconds_bucket[5m]))
 ```
 
 ### 3. Retain Audit Logs
@@ -367,7 +367,7 @@ Watch for high cardinality from container IDs:
 
 ```bash
 # Check cardinality
-curl -s localhost:9090/metrics | grep -c zigviz_
+curl -s localhost:9090/metrics | grep -c zviz_
 ```
 
 ## See Also

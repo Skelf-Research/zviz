@@ -1,6 +1,6 @@
 # Broker Design
 
-The ZigViz broker mediates syscalls that require argument inspection.
+The ZViz broker mediates syscalls that require argument inspection.
 
 ## Overview
 

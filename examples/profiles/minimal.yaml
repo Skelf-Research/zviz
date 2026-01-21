@@ -5,8 +5,8 @@
 # basic computation (no network, no filesystem access).
 #
 # Usage:
-#   zigviz compile profiles/minimal.yaml
-#   # Then use via annotation: zigviz.io/profile: "minimal"
+#   zviz compile profiles/minimal.yaml
+#   # Then use via annotation: zviz.io/profile: "minimal"
 
 name: minimal
 version: "1.0"
@@ -98,4 +98,4 @@ capabilities:
 audit:
   log_blocked: true
   log_mediated: true
-  log_path: /var/log/zigviz/minimal.log
+  log_path: /var/log/zviz/minimal.log

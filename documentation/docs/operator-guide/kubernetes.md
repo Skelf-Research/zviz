@@ -1,40 +1,40 @@
 # Kubernetes Integration
 
-This guide covers deploying ZigViz as a Kubernetes RuntimeClass.
+This guide covers deploying ZViz as a Kubernetes RuntimeClass.
 
 ## Overview
 
-ZigViz integrates with Kubernetes through the RuntimeClass API. Pods can select ZigViz as their runtime using the `runtimeClassName` field.
+ZViz integrates with Kubernetes through the RuntimeClass API. Pods can select ZViz as their runtime using the `runtimeClassName` field.
 
 ## Prerequisites
 
 - Kubernetes 1.26+
 - containerd 1.6+
-- ZigViz installed on worker nodes
+- ZViz installed on worker nodes
 
 ## Installation
 
-### Step 1: Install ZigViz on Worker Nodes
+### Step 1: Install ZViz on Worker Nodes
 
-On each node that will run ZigViz workloads:
+On each node that will run ZViz workloads:
 
 ```bash
-curl -fsSL https://zigviz.io/install.sh | sh
+curl -fsSL https://zviz.io/install.sh | sh
 ```
 
 ### Step 2: Configure containerd
 
-Add ZigViz runtime to containerd configuration:
+Add ZViz runtime to containerd configuration:
 
 ```bash
 cat >> /etc/containerd/config.toml << 'EOF'
 
-# ZigViz Runtime
-[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.zigviz]
+# ZViz Runtime
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.zviz]
   runtime_type = "io.containerd.runc.v2"
-  pod_annotations = ["zigviz.io/*"]
-  [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.zigviz.options]
-    BinaryName = "/usr/local/bin/zigviz"
+  pod_annotations = ["zviz.io/*"]
+  [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.zviz.options]
+    BinaryName = "/usr/local/bin/zviz"
 EOF
 ```
 
@@ -46,37 +46,37 @@ systemctl restart containerd
 
 ### Step 3: Label Nodes
 
-Label nodes where ZigViz is available:
+Label nodes where ZViz is available:
 
 ```bash
-kubectl label nodes <node-name> zigviz.io/enabled=true
+kubectl label nodes <node-name> zviz.io/enabled=true
 ```
 
 ### Step 4: Create RuntimeClass
 
 ```yaml
-# zigviz-runtimeclass.yaml
+# zviz-runtimeclass.yaml
 apiVersion: node.k8s.io/v1
 kind: RuntimeClass
 metadata:
-  name: zigviz
+  name: zviz
   labels:
-    app.kubernetes.io/name: zigviz
-handler: zigviz
+    app.kubernetes.io/name: zviz
+handler: zviz
 overhead:
   podFixed:
     memory: "10Mi"
     cpu: "50m"
 scheduling:
   nodeSelector:
-    zigviz.io/enabled: "true"
+    zviz.io/enabled: "true"
 ```
 
 ```bash
-kubectl apply -f zigviz-runtimeclass.yaml
+kubectl apply -f zviz-runtimeclass.yaml
 ```
 
-## Using ZigViz
+## Using ZViz
 
 ### Basic Pod
 
@@ -86,7 +86,7 @@ kind: Pod
 metadata:
   name: secure-pod
 spec:
-  runtimeClassName: zigviz
+  runtimeClassName: zviz
   containers:
   - name: app
     image: alpine:latest
@@ -101,9 +101,9 @@ kind: Pod
 metadata:
   name: ci-job
   annotations:
-    zigviz.io/profile: "ci-runner"
+    zviz.io/profile: "ci-runner"
 spec:
-  runtimeClassName: zigviz
+  runtimeClassName: zviz
   containers:
   - name: build
     image: node:20
@@ -118,12 +118,12 @@ kind: Pod
 metadata:
   name: custom-pod
   annotations:
-    zigviz.io/profile: "minimal"
-    zigviz.io/audit: "true"
-    zigviz.io/broker-timeout: "5000"
-    zigviz.io/strict-mode: "true"
+    zviz.io/profile: "minimal"
+    zviz.io/audit: "true"
+    zviz.io/broker-timeout: "5000"
+    zviz.io/strict-mode: "true"
 spec:
-  runtimeClassName: zigviz
+  runtimeClassName: zviz
   containers:
   - name: app
     image: my-app:latest
@@ -133,11 +133,11 @@ spec:
 
 | Annotation | Description | Default |
 |------------|-------------|---------|
-| `zigviz.io/profile` | Security profile name | `default` |
-| `zigviz.io/audit` | Enable audit logging | `false` |
-| `zigviz.io/broker-timeout` | Broker timeout in ms | `1000` |
-| `zigviz.io/strict-mode` | Fail on unknown syscalls | `false` |
-| `zigviz.io/network-policy` | Network policy override | (from profile) |
+| `zviz.io/profile` | Security profile name | `default` |
+| `zviz.io/audit` | Enable audit logging | `false` |
+| `zviz.io/broker-timeout` | Broker timeout in ms | `1000` |
+| `zviz.io/strict-mode` | Fail on unknown syscalls | `false` |
+| `zviz.io/network-policy` | Network policy override | (from profile) |
 
 ## Deployments and StatefulSets
 
@@ -158,9 +158,9 @@ spec:
       labels:
         app: secure-app
       annotations:
-        zigviz.io/profile: "web-server"
+        zviz.io/profile: "web-server"
     spec:
-      runtimeClassName: zigviz
+      runtimeClassName: zviz
       containers:
       - name: web
         image: nginx:latest
@@ -190,9 +190,9 @@ spec:
       labels:
         app: secure-db
       annotations:
-        zigviz.io/profile: "database"
+        zviz.io/profile: "database"
     spec:
-      runtimeClassName: zigviz
+      runtimeClassName: zviz
       containers:
       - name: db
         image: postgres:15
@@ -222,9 +222,9 @@ spec:
   template:
     metadata:
       annotations:
-        zigviz.io/profile: "ci-runner"
+        zviz.io/profile: "ci-runner"
     spec:
-      runtimeClassName: zigviz
+      runtimeClassName: zviz
       restartPolicy: Never
       containers:
       - name: build
@@ -253,9 +253,9 @@ spec:
       template:
         metadata:
           annotations:
-            zigviz.io/profile: "scanner"
+            zviz.io/profile: "scanner"
         spec:
-          runtimeClassName: zigviz
+          runtimeClassName: zviz
           restartPolicy: OnFailure
           containers:
           - name: scanner
@@ -265,13 +265,13 @@ spec:
 
 ## Network Policies
 
-ZigViz respects Kubernetes NetworkPolicies and adds its own layer:
+ZViz respects Kubernetes NetworkPolicies and adds its own layer:
 
 ```yaml
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: zigviz-pods
+  name: zviz-pods
 spec:
   podSelector:
     matchLabels:
@@ -301,14 +301,14 @@ spec:
 
 ### Pod Overhead
 
-ZigViz adds overhead to pods:
+ZViz adds overhead to pods:
 
 ```yaml
 apiVersion: node.k8s.io/v1
 kind: RuntimeClass
 metadata:
-  name: zigviz
-handler: zigviz
+  name: zviz
+handler: zviz
 overhead:
   podFixed:
     memory: "10Mi"  # Broker memory
@@ -323,7 +323,7 @@ Account for overhead in quotas:
 apiVersion: v1
 kind: ResourceQuota
 metadata:
-  name: zigviz-quota
+  name: zviz-quota
   namespace: secure-workloads
 spec:
   hard:
@@ -341,11 +341,11 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: zigviz
+  name: zviz
 spec:
   selector:
     matchLabels:
-      app: zigviz
+      app: zviz
   endpoints:
   - port: metrics
     interval: 30s
@@ -353,7 +353,7 @@ spec:
 
 ### Grafana Dashboard
 
-Import the ZigViz dashboard from the [Grafana catalog](https://grafana.com/grafana/dashboards/XXXXX).
+Import the ZViz dashboard from the [Grafana catalog](https://grafana.com/grafana/dashboards/XXXXX).
 
 ## Troubleshooting
 
@@ -366,18 +366,18 @@ kubectl describe pod <pod-name>
 # Check containerd logs
 journalctl -u containerd -f
 
-# Check ZigViz logs
-kubectl logs -l app.kubernetes.io/name=zigviz
+# Check ZViz logs
+kubectl logs -l app.kubernetes.io/name=zviz
 ```
 
 ### Permission Denied Errors
 
 ```bash
 # Check profile requirements
-zigviz compile --check-host <profile>
+zviz compile --check-host <profile>
 
 # Enable audit mode
-kubectl annotate pod <pod-name> zigviz.io/audit=true
+kubectl annotate pod <pod-name> zviz.io/audit=true
 ```
 
 ### Performance Issues
@@ -387,7 +387,7 @@ kubectl annotate pod <pod-name> zigviz.io/audit=true
 kubectl exec -it <pod-name> -- /bin/sh -c "curl localhost:9090/metrics"
 
 # Run diagnostics
-zigviz benchmark
+zviz benchmark
 ```
 
 ## See Also

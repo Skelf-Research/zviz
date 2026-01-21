@@ -1,6 +1,6 @@
-# ZigViz Documentation
+# ZViz Documentation
 
-This directory contains the user-facing documentation for ZigViz, built with [MkDocs](https://www.mkdocs.org/) and the [Material theme](https://squidfunk.github.io/mkdocs-material/).
+This directory contains the user-facing documentation for ZViz, built with [MkDocs](https://www.mkdocs.org/) and the [Material theme](https://squidfunk.github.io/mkdocs-material/).
 
 ## Quick Start
 

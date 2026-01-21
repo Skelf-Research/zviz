@@ -4,7 +4,7 @@ How to report security issues.
 
 ## Private Disclosure
 
-Email: security@zigviz.io
+Email: security@zviz.io
 
 Include:
 - Description

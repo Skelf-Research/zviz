@@ -1,6 +1,6 @@
 # Upgrade Guide
 
-Safely upgrade ZigViz in production.
+Safely upgrade ZViz in production.
 
 ## Upgrade Process
 
@@ -19,6 +19,6 @@ Safely upgrade ZigViz in production.
 
 ```bash
 # Restore previous version
-cp /usr/local/bin/zigviz.bak /usr/local/bin/zigviz
+cp /usr/local/bin/zviz.bak /usr/local/bin/zviz
 systemctl restart containerd
 ```

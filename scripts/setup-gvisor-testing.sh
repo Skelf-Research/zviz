@@ -18,7 +18,7 @@ log_fail() { echo -e "${RED}[FAIL]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 
 echo "=============================================="
-echo "   ZigViz gVisor Testing Setup"
+echo "   ZViz gVisor Testing Setup"
 echo "=============================================="
 echo ""
 

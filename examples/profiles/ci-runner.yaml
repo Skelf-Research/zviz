@@ -5,8 +5,8 @@
 # and common build tools while blocking dangerous syscalls.
 #
 # Usage:
-#   zigviz compile profiles/ci-runner.yaml
-#   # Then use via annotation: zigviz.io/profile: "ci-runner"
+#   zviz compile profiles/ci-runner.yaml
+#   # Then use via annotation: zviz.io/profile: "ci-runner"
 
 name: ci-runner
 version: "1.0"
@@ -192,4 +192,4 @@ audit:
   # Log mediated syscalls (verbose)
   log_mediated: false
   # Log file path
-  log_path: /var/log/zigviz/ci-runner.log
+  log_path: /var/log/zviz/ci-runner.log

@@ -1,10 +1,10 @@
-# Multi-tenant Namespace Setup with ZigViz
+# Multi-tenant Namespace Setup with ZViz
 #
 # This example creates a complete tenant namespace with:
 # - Resource quotas
 # - Network policies
 # - RBAC for tenant admins
-# - ZigViz defaults
+# - ZViz defaults
 #
 # Usage:
 #   # Create for a new tenant
@@ -21,11 +21,11 @@ metadata:
   name: tenant-acme  # Replace with tenant name
   labels:
     tenant: acme
-    zigviz.io/enabled: "true"
+    zviz.io/enabled: "true"
   annotations:
-    # Default ZigViz profile for all pods in namespace
-    zigviz.io/default-profile: "hostile-tenant"
-    zigviz.io/audit: "true"
+    # Default ZViz profile for all pods in namespace
+    zviz.io/default-profile: "hostile-tenant"
+    zviz.io/audit: "true"
 
 ---
 # ResourceQuota limits tenant resources

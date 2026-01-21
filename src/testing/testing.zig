@@ -1,7 +1,7 @@
 const std = @import("std");
 const log = @import("../log.zig");
 
-/// ZigViz Testing and Validation Framework
+/// ZViz Testing and Validation Framework
 ///
 /// This module provides:
 /// - Fuzzing infrastructure for seccomp, network, and cgroup code

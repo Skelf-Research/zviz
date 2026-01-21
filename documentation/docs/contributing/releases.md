@@ -1,6 +1,6 @@
 # Release Process
 
-How ZigViz releases are made.
+How ZViz releases are made.
 
 ## Version Scheme
 

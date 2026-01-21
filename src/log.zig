@@ -1,6 +1,6 @@
 const std = @import("std");
 
-/// Log levels for ZigViz
+/// Log levels for ZViz
 pub const Level = enum {
     debug,
     info,

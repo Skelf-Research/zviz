@@ -1,11 +1,11 @@
 # Performance Tuning
 
-Optimize ZigViz for your workload.
+Optimize ZViz for your workload.
 
 ## Benchmarking
 
 ```bash
-zigviz benchmark
+zviz benchmark
 ```
 
 ## Tuning Options
@@ -23,7 +23,7 @@ syscalls:
 ### Increase Broker Concurrency
 
 ```yaml
-# /etc/zigviz/config.yaml
+# /etc/zviz/config.yaml
 broker:
   max_inflight: 512
 ```

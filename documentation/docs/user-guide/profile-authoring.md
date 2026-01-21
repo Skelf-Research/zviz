@@ -10,10 +10,10 @@ Before writing a profile, understand what your application needs:
 
 ```bash
 # Run with audit mode to discover syscalls
-sudo zigviz run --audit --profile minimal my-container . /bin/my-app
+sudo zviz run --audit --profile minimal my-container . /bin/my-app
 
 # Review audit log
-jq '.[] | select(.decision == "denied")' /var/log/zigviz/audit.json
+jq '.[] | select(.decision == "denied")' /var/log/zviz/audit.json
 ```
 
 ### Start with a Base Profile
@@ -134,10 +134,10 @@ resources:
 
 ```bash
 # Validate
-zigviz compile --validate my-profile.yaml
+zviz compile --validate my-profile.yaml
 
 # Test
-sudo zigviz run --profile my-profile test . /bin/my-app
+sudo zviz run --profile my-profile test . /bin/my-app
 ```
 
 ## Best Practices
@@ -152,10 +152,10 @@ sudo zigviz run --profile my-profile test . /bin/my-app
 
 ```bash
 # Enable debug logging
-sudo zigviz --log-level debug run --profile my-profile ...
+sudo zviz --log-level debug run --profile my-profile ...
 
 # Check broker decisions
-jq '.syscall' /var/log/zigviz/audit.json | sort | uniq -c
+jq '.syscall' /var/log/zviz/audit.json | sort | uniq -c
 ```
 
 ## See Also

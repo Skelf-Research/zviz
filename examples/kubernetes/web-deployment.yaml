@@ -1,6 +1,6 @@
-# Web Application Deployment with ZigViz
+# Web Application Deployment with ZViz
 #
-# This example deploys a web application with ZigViz isolation.
+# This example deploys a web application with ZViz isolation.
 # The web-server profile allows network binding and serving files
 # while blocking file system writes and dangerous syscalls.
 #
@@ -25,9 +25,9 @@ spec:
       labels:
         app: web-app
       annotations:
-        zigviz.io/profile: "web-server"
+        zviz.io/profile: "web-server"
     spec:
-      runtimeClassName: zigviz
+      runtimeClassName: zviz
 
       containers:
       - name: nginx
@@ -147,10 +147,10 @@ data:
   index.html: |
     <!DOCTYPE html>
     <html>
-    <head><title>ZigViz Secured App</title></head>
+    <head><title>ZViz Secured App</title></head>
     <body>
-      <h1>Hello from ZigViz!</h1>
-      <p>This application is running in a ZigViz-isolated container.</p>
+      <h1>Hello from ZViz!</h1>
+      <p>This application is running in a ZViz-isolated container.</p>
     </body>
     </html>
 

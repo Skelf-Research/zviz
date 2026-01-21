@@ -11,8 +11,8 @@
 # - Filesystem isolation
 #
 # Usage:
-#   zigviz compile profiles/hostile-tenant.yaml
-#   # Then use via annotation: zigviz.io/profile: "hostile-tenant"
+#   zviz compile profiles/hostile-tenant.yaml
+#   # Then use via annotation: zviz.io/profile: "hostile-tenant"
 
 name: hostile-tenant
 version: "1.0"
@@ -258,7 +258,7 @@ audit:
   log_blocked: true
   log_mediated: true
   log_allowed: true          # Log everything for forensics
-  log_path: /var/log/zigviz/hostile-tenant.log
+  log_path: /var/log/zviz/hostile-tenant.log
 
   # Include details for security analysis
   include_args: true

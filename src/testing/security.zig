@@ -4,7 +4,7 @@ const seccomp = @import("../seccomp/seccomp.zig");
 const containment = @import("../containment/containment.zig");
 const cgroup = @import("../cgroup/cgroup.zig");
 
-/// Security validation and hardening checks for ZigViz
+/// Security validation and hardening checks for ZViz
 
 // ============================================================================
 // Security Audit Results
@@ -377,7 +377,7 @@ pub fn runFullAudit(
     ns_config: ?containment.Config,
     resource_limits: ?cgroup.Limits,
 ) !void {
-    log.info("=== ZigViz Security Audit ===", .{});
+    log.info("=== ZViz Security Audit ===", .{});
 
     var total_critical: u32 = 0;
     var total_warning: u32 = 0;

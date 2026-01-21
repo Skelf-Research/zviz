@@ -1,7 +1,7 @@
-# Secure Dockerfile for ZigViz
+# Secure Dockerfile for ZViz
 #
 # This Dockerfile demonstrates best practices for building
-# containers that will run under ZigViz isolation.
+# containers that will run under ZViz isolation.
 #
 # Key principles:
 # - Use minimal base images
@@ -14,7 +14,7 @@
 #   docker build -f Dockerfile.secure -t myapp:secure .
 #
 # Run:
-#   docker run --runtime=zigviz myapp:secure
+#   docker run --runtime=zviz myapp:secure
 
 # ============================================
 # Stage 1: Build stage
@@ -36,11 +36,11 @@ RUN npm run build
 # ============================================
 FROM gcr.io/distroless/nodejs20-debian12 AS production
 
-# Labels for ZigViz
-LABEL zigviz.profile="web-server"
-LABEL zigviz.audit="false"
+# Labels for ZViz
+LABEL zviz.profile="web-server"
+LABEL zviz.audit="false"
 LABEL org.opencontainers.image.title="My Secure App"
-LABEL org.opencontainers.image.description="Application running with ZigViz isolation"
+LABEL org.opencontainers.image.description="Application running with ZViz isolation"
 
 # Use non-root user (distroless default)
 USER nonroot:nonroot

@@ -2,7 +2,7 @@ const std = @import("std");
 const log = @import("../log.zig");
 const errors = @import("../errors.zig");
 
-/// ZigViz profile (matches docs/profile-schema.md)
+/// ZViz profile (matches docs/profile-schema.md)
 pub const Profile = struct {
     name: []const u8,
     version: []const u8,
@@ -431,7 +431,7 @@ pub fn validate(profile: Profile) !void {
 /// Default CI runner profile (matches docs/profile-ci-runner.md)
 pub fn defaultCiRunner() Profile {
     return .{
-        .name = "zigviz-ci",
+        .name = "zviz-ci",
         .version = "0.1",
         .mode = .high_density,
         .description = "CI runner profile for build and test workloads",
@@ -536,7 +536,7 @@ pub const BaseProfiles = struct {
     /// Minimal profile with just seccomp
     pub fn minimal() Profile {
         return .{
-            .name = "zigviz-minimal",
+            .name = "zviz-minimal",
             .version = "0.1",
             .mode = .high_density,
             .description = "Minimal profile with basic syscall filtering",
@@ -556,7 +556,7 @@ pub const BaseProfiles = struct {
     /// Restricted profile for hostile tenants
     pub fn hostile() Profile {
         var profile = defaultCiRunner();
-        profile.name = "zigviz-hostile";
+        profile.name = "zviz-hostile";
         profile.mode = .hostile_tenant;
         profile.network.mode = .deny_all;
         profile.resources.memory_max = "2G";
@@ -576,7 +576,7 @@ test "default profile validation" {
 test "ci runner profile" {
     const profile = defaultCiRunner();
     try validate(profile);
-    try std.testing.expectEqualStrings("zigviz-ci", profile.name);
+    try std.testing.expectEqualStrings("zviz-ci", profile.name);
 }
 
 test "json parsing" {

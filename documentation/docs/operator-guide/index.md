@@ -1,12 +1,12 @@
 # Operator Guide
 
-This guide is for operators deploying and managing ZigViz in production environments.
+This guide is for operators deploying and managing ZViz in production environments.
 
 ## Overview
 
-Operating ZigViz involves:
+Operating ZViz involves:
 
-1. **Installation & Configuration** — Setting up ZigViz on nodes
+1. **Installation & Configuration** — Setting up ZViz on nodes
 2. **Integration** — Connecting with containerd/Kubernetes
 3. **Monitoring** — Observing performance and security events
 4. **Maintenance** — Upgrades, debugging, and troubleshooting
@@ -19,8 +19,8 @@ Operating ZigViz involves:
 │  ┌─────────────────────────────────────────────────────┐    │
 │  │                    Control Plane                     │    │
 │  │  ┌─────────────────────────────────────────────┐    │    │
-│  │  │  RuntimeClass: zigviz                        │    │    │
-│  │  │  handler: zigviz                             │    │    │
+│  │  │  RuntimeClass: zviz                        │    │    │
+│  │  │  handler: zviz                             │    │    │
 │  │  └─────────────────────────────────────────────┘    │    │
 │  └─────────────────────────────────────────────────────┘    │
 │                                                              │
@@ -29,7 +29,7 @@ Operating ZigViz involves:
 │  │  ┌───────────────────────────────────────────────┐  │    │
 │  │  │                   containerd                   │  │    │
 │  │  │  ┌─────────────────────────────────────────┐  │  │    │
-│  │  │  │           ZigViz Runtime                 │  │  │    │
+│  │  │  │           ZViz Runtime                 │  │  │    │
 │  │  │  │  ┌─────────┐  ┌─────────┐  ┌─────────┐  │  │  │    │
 │  │  │  │  │Container│  │Container│  │Container│  │  │  │    │
 │  │  │  │  │   Pod   │  │   Pod   │  │   Pod   │  │  │  │    │
@@ -48,7 +48,7 @@ Operating ZigViz involves:
 
     ---
 
-    Deploy ZigViz as a Kubernetes RuntimeClass
+    Deploy ZViz as a Kubernetes RuntimeClass
 
     [:octicons-arrow-right-24: Kubernetes](kubernetes.md)
 
@@ -56,7 +56,7 @@ Operating ZigViz involves:
 
     ---
 
-    Configure containerd to use ZigViz
+    Configure containerd to use ZViz
 
     [:octicons-arrow-right-24: containerd](containerd.md)
 
@@ -88,7 +88,7 @@ Operating ZigViz involves:
 
     ---
 
-    Safely upgrade ZigViz
+    Safely upgrade ZViz
 
     [:octicons-arrow-right-24: Upgrades](upgrades.md)
 
@@ -96,11 +96,11 @@ Operating ZigViz involves:
 
 ## Quick Deployment
 
-### 1. Install ZigViz on All Nodes
+### 1. Install ZViz on All Nodes
 
 ```bash
 # On each worker node
-curl -fsSL https://zigviz.io/install.sh | sh
+curl -fsSL https://zviz.io/install.sh | sh
 ```
 
 ### 2. Configure containerd
@@ -108,10 +108,10 @@ curl -fsSL https://zigviz.io/install.sh | sh
 ```bash
 # Add to /etc/containerd/config.toml
 cat >> /etc/containerd/config.toml << 'EOF'
-[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.zigviz]
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.zviz]
   runtime_type = "io.containerd.runc.v2"
-  [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.zigviz.options]
-    BinaryName = "/usr/local/bin/zigviz"
+  [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.zviz.options]
+    BinaryName = "/usr/local/bin/zviz"
 EOF
 
 systemctl restart containerd
@@ -120,22 +120,22 @@ systemctl restart containerd
 ### 3. Create RuntimeClass
 
 ```yaml
-# zigviz-runtimeclass.yaml
+# zviz-runtimeclass.yaml
 apiVersion: node.k8s.io/v1
 kind: RuntimeClass
 metadata:
-  name: zigviz
-handler: zigviz
+  name: zviz
+handler: zviz
 scheduling:
   nodeSelector:
-    zigviz.io/enabled: "true"
+    zviz.io/enabled: "true"
 ```
 
 ```bash
-kubectl apply -f zigviz-runtimeclass.yaml
+kubectl apply -f zviz-runtimeclass.yaml
 ```
 
-### 4. Deploy Pods with ZigViz
+### 4. Deploy Pods with ZViz
 
 ```yaml
 apiVersion: v1
@@ -143,9 +143,9 @@ kind: Pod
 metadata:
   name: secure-workload
   annotations:
-    zigviz.io/profile: "ci-runner"
+    zviz.io/profile: "ci-runner"
 spec:
-  runtimeClassName: zigviz
+  runtimeClassName: zviz
   containers:
   - name: app
     image: my-app:latest
@@ -158,7 +158,7 @@ spec:
 Verify required kernel options:
 
 ```bash
-zigviz validate
+zviz validate
 ```
 
 Required:
@@ -196,7 +196,7 @@ mount | grep cgroup2
 
 ### Principle of Least Privilege
 
-- Run ZigViz with minimum required capabilities
+- Run ZViz with minimum required capabilities
 - Use read-only root filesystems
 - Apply network policies
 
@@ -205,13 +205,13 @@ mount | grep cgroup2
 Enable audit logging for security events:
 
 ```yaml
-# /etc/zigviz/config.yaml
+# /etc/zviz/config.yaml
 logging:
   level: info
   format: json
   audit:
     enabled: true
-    path: /var/log/zigviz/audit.json
+    path: /var/log/zviz/audit.json
 ```
 
 ### Security Updates
@@ -220,10 +220,10 @@ Subscribe to security advisories:
 
 ```bash
 # Check for updates
-zigviz version --check-update
+zviz version --check-update
 
 # View security advisories
-zigviz security advisories
+zviz security advisories
 ```
 
 ## Capacity Planning
@@ -232,7 +232,7 @@ zigviz security advisories
 
 | Component | Memory |
 |-----------|--------|
-| ZigViz broker | ~5MB per container |
+| ZViz broker | ~5MB per container |
 | Base overhead | ~2MB |
 | Profile cache | ~1MB |
 
@@ -245,8 +245,8 @@ zigviz security advisories
 
 | Path | Purpose | Recommended Size |
 |------|---------|------------------|
-| `/var/lib/zigviz` | State directory | 1GB |
-| `/var/log/zigviz` | Logs | 10GB |
+| `/var/lib/zviz` | State directory | 1GB |
+| `/var/log/zviz` | Logs | 10GB |
 
 ## Troubleshooting
 
@@ -257,14 +257,14 @@ zigviz security advisories
 journalctl -u containerd -f
 
 # Debug mode
-zigviz --log-level debug create ...
+zviz --log-level debug create ...
 ```
 
 ### Permission Denied
 
 ```bash
 # Check capabilities
-zigviz validate
+zviz validate
 
 # Check AppArmor/SELinux
 aa-status
@@ -275,10 +275,10 @@ setenforce 0  # Temporarily disable SELinux
 
 ```bash
 # Check metrics
-zigviz metrics
+zviz metrics
 
 # Run benchmarks
-zigviz benchmark
+zviz benchmark
 ```
 
 See [Debugging Guide](debugging.md) for detailed troubleshooting.

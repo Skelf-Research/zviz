@@ -1,12 +1,12 @@
 #!/bin/bash
 #
-# Real gVisor vs ZigViz Comparison Tests
+# Real gVisor vs ZViz Comparison Tests
 # Runs identical workloads on both runtimes and compares actual outcomes
 #
 # Prerequisites:
 #   - gVisor (runsc) installed: https://gvisor.dev/docs/user_guide/install/
 #   - Docker with gVisor runtime configured
-#   - ZigViz built: zig build syscall-tester
+#   - ZViz built: zig build syscall-tester
 #
 # Usage:
 #   ./tests/compare_runtimes.sh           # Run all tests
@@ -114,7 +114,7 @@ run_in_docker() {
         /syscall_tester --json > "$output_file" 2>&1 || true
 }
 
-# Run syscall_tester natively (simulates ZigViz baseline)
+# Run syscall_tester natively (simulates ZViz baseline)
 run_native() {
     local output_file="$1"
     "$SYSCALL_TESTER" --json > "$output_file" 2>&1 || true

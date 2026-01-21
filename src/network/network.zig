@@ -238,7 +238,7 @@ pub fn generateNftRules(allocator: std.mem.Allocator, config: Config) ![]u8 {
 
     // Header
     const header =
-        \\table inet zigviz {
+        \\table inet zviz {
         \\  chain output {
         \\    type filter hook output priority 0; policy drop;
         \\    oif lo accept

@@ -1,6 +1,6 @@
 # Threat Model
 
-This document defines the security goals and assumptions that guide ZigViz.
+This document defines the security goals and assumptions that guide ZViz.
 
 ## Goals
 
@@ -45,7 +45,7 @@ Policy outcome equivalence assumes LSM availability and network policy enforceme
 
 ## Security posture statement
 
-ZigViz aims to match gVisor-level policy outcomes for syscall, object, and network access control. For kernel exploit resistance, ZigViz relies on an optional microVM boundary rather than a userspace kernel.
+ZViz aims to match gVisor-level policy outcomes for syscall, object, and network access control. For kernel exploit resistance, ZViz relies on an optional microVM boundary rather than a userspace kernel.
 
 ## Related documents
 

@@ -4,7 +4,7 @@
 //! Usage: ./syscall_tester [test_name]
 //!
 //! This binary attempts various syscalls and reports success/failure.
-//! Run it in both gVisor and ZigViz containers to compare outcomes.
+//! Run it in both gVisor and ZViz containers to compare outcomes.
 
 const std = @import("std");
 

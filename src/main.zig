@@ -107,10 +107,10 @@ fn run() !void {
 }
 
 fn handleError(err: anyerror) void {
-    // Check if it's a ZigViz error
-    if (@as(?errors.Error, @errorCast(err))) |zigviz_err| {
-        log.err("{s}", .{errors.describe(zigviz_err)});
-        std.process.exit(errors.toExitCode(zigviz_err));
+    // Check if it's a ZViz error
+    if (@as(?errors.Error, @errorCast(err))) |zviz_err| {
+        log.err("{s}", .{errors.describe(zviz_err)});
+        std.process.exit(errors.toExitCode(zviz_err));
     }
 
     // Handle other errors
@@ -134,7 +134,7 @@ fn showConfig(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var stream = std.io.fixedBufferStream(&buf);
     const writer = stream.writer();
 
-    try writer.writeAll("Current ZigViz Configuration:\n\n");
+    try writer.writeAll("Current ZViz Configuration:\n\n");
     try writer.print("Runtime:\n", .{});
     try writer.print("  state_dir: {s}\n", .{cfg.runtime.state_dir});
     try writer.print("  rootless: {}\n", .{cfg.runtime.rootless});
@@ -276,7 +276,7 @@ fn runSecurityAudit(allocator: std.mem.Allocator) !void {
 fn printVersion() !void {
     const stdout = std.fs.File.stdout();
     var buf: [256]u8 = undefined;
-    const msg1 = std.fmt.bufPrint(&buf, "zigviz version {s}\n", .{version}) catch "zigviz\n";
+    const msg1 = std.fmt.bufPrint(&buf, "zviz version {s}\n", .{version}) catch "zviz\n";
     try stdout.writeAll(msg1);
     const msg2 = std.fmt.bufPrint(&buf, "zig version {s}\n", .{builtin.zig_version_string}) catch "zig\n";
     try stdout.writeAll(msg2);
@@ -285,9 +285,9 @@ fn printVersion() !void {
 fn printUsage() !void {
     const stdout = std.fs.File.stdout();
     try stdout.writeAll(
-        \\ZigViz - Zig-based container isolation runtime
+        \\ZViz - Zig-based container isolation runtime
         \\
-        \\Usage: zigviz <command> [options]
+        \\Usage: zviz <command> [options]
         \\
         \\OCI Runtime Commands:
         \\  create <container-id> <bundle>   Create a container

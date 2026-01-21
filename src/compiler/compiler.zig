@@ -271,7 +271,7 @@ fn buildBrokerRules(profile: schema.Profile) BrokerRules {
 /// CLI entry point for profile compilation
 pub fn compileProfile(alloc: std.mem.Allocator, args: []const []const u8) !void {
     if (args.len < 1) {
-        log.err("Usage: zigviz compile <profile.yaml> [--output <dir>]", .{});
+        log.err("Usage: zviz compile <profile.yaml> [--output <dir>]", .{});
         return errors.Error.ProfileNotFound;
     }
 

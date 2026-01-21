@@ -96,15 +96,15 @@ pub const Config = struct {
 };
 
 /// Container runtime state directory
-pub const STATE_DIR = "/run/zigviz";
+pub const STATE_DIR = "/run/zviz";
 
-/// ZigViz annotation keys for pod configuration
+/// ZViz annotation keys for pod configuration
 pub const Annotations = struct {
-    pub const PREFIX = "zigviz.io/";
-    pub const PROFILE = "zigviz.io/profile";
-    pub const AUDIT = "zigviz.io/audit";
-    pub const BROKER_TIMEOUT = "zigviz.io/broker-timeout";
-    pub const STRICT_MODE = "zigviz.io/strict-mode";
+    pub const PREFIX = "zviz.io/";
+    pub const PROFILE = "zviz.io/profile";
+    pub const AUDIT = "zviz.io/audit";
+    pub const BROKER_TIMEOUT = "zviz.io/broker-timeout";
+    pub const STRICT_MODE = "zviz.io/strict-mode";
 };
 
 /// Extract annotation value from JSON content
@@ -218,24 +218,24 @@ pub const Container = struct {
         log.debug("Config loaded from {s} ({d} bytes)", .{ config_path, content.len });
     }
 
-    /// Parse ZigViz annotations from OCI config content
+    /// Parse ZViz annotations from OCI config content
     fn parseAnnotations(self: *Container, content: []const u8) void {
         // Look for annotations section in JSON
         // Simple string-based parsing for common annotation patterns
 
-        // Parse profile annotation: "zigviz.io/profile": "ci-runner"
+        // Parse profile annotation: "zviz.io/profile": "ci-runner"
         if (extractAnnotationValue(content, Annotations.PROFILE)) |value| {
             self.profile_name = value;
             log.debug("Annotation {s} = {s}", .{ Annotations.PROFILE, value });
         }
 
-        // Parse audit annotation: "zigviz.io/audit": "true"
+        // Parse audit annotation: "zviz.io/audit": "true"
         if (extractAnnotationValue(content, Annotations.AUDIT)) |value| {
             self.audit_enabled = std.mem.eql(u8, value, "true") or std.mem.eql(u8, value, "1");
             log.debug("Annotation {s} = {}", .{ Annotations.AUDIT, self.audit_enabled });
         }
 
-        // Parse broker timeout: "zigviz.io/broker-timeout": "200"
+        // Parse broker timeout: "zviz.io/broker-timeout": "200"
         if (extractAnnotationValue(content, Annotations.BROKER_TIMEOUT)) |value| {
             if (std.fmt.parseInt(u32, value, 10)) |timeout| {
                 self.broker_timeout_override = timeout;
@@ -244,7 +244,7 @@ pub const Container = struct {
         }
     }
 
-    /// Load ZigViz profile
+    /// Load ZViz profile
     /// Priority: explicit path > annotation profile > default
     pub fn loadProfile(self: *Container, profile_path: ?[]const u8) !void {
         // 1. Explicit profile path takes priority
@@ -264,11 +264,11 @@ pub const Container = struct {
 
             // Try loading from standard profile directory
             var path_buf: [256]u8 = undefined;
-            const profile_file = std.fmt.bufPrint(&path_buf, "/etc/zigviz/profiles/{s}.json", .{name}) catch null;
+            const profile_file = std.fmt.bufPrint(&path_buf, "/etc/zviz/profiles/{s}.json", .{name}) catch null;
             if (profile_file) |path| {
                 if (schema.loadProfile(self.allocator, path)) |profile| {
                     self.profile = profile;
-                    log.debug("Profile loaded from /etc/zigviz/profiles: {s}", .{name});
+                    log.debug("Profile loaded from /etc/zviz/profiles: {s}", .{name});
                     return;
                 } else |_| {
                     log.warn("Profile '{s}' not found, using default", .{name});
@@ -283,13 +283,13 @@ pub const Container = struct {
 
     /// Load a built-in profile by name
     fn loadBuiltinProfile(_: *Container, name: []const u8) ?schema.Profile {
-        if (std.mem.eql(u8, name, "ci-runner") or std.mem.eql(u8, name, "zigviz-ci")) {
+        if (std.mem.eql(u8, name, "ci-runner") or std.mem.eql(u8, name, "zviz-ci")) {
             return schema.BaseProfiles.ciRunner();
         }
-        if (std.mem.eql(u8, name, "hostile-tenant") or std.mem.eql(u8, name, "zigviz-hostile")) {
+        if (std.mem.eql(u8, name, "hostile-tenant") or std.mem.eql(u8, name, "zviz-hostile")) {
             return schema.BaseProfiles.hostile();
         }
-        if (std.mem.eql(u8, name, "minimal") or std.mem.eql(u8, name, "zigviz-minimal")) {
+        if (std.mem.eql(u8, name, "minimal") or std.mem.eql(u8, name, "zviz-minimal")) {
             return schema.BaseProfiles.minimal();
         }
         return null;
@@ -432,7 +432,7 @@ pub fn create(allocator: std.mem.Allocator, args: []const []const u8) !void {
     }
 
     if (container_id == null) {
-        log.err("Usage: zigviz create [--console-socket <path>] [--bundle <path>] <container-id>", .{});
+        log.err("Usage: zviz create [--console-socket <path>] [--bundle <path>] <container-id>", .{});
         return errors.Error.InvalidContainerId;
     }
 
@@ -448,7 +448,7 @@ pub fn create(allocator: std.mem.Allocator, args: []const []const u8) !void {
     // Load OCI config.json
     try container.loadConfig();
 
-    // Load ZigViz profile (from bundle or default)
+    // Load ZViz profile (from bundle or default)
     try container.loadProfile(null);
 
     // Set up cgroups
@@ -467,7 +467,7 @@ pub fn create(allocator: std.mem.Allocator, args: []const []const u8) !void {
 /// Start a created container
 pub fn start(allocator: std.mem.Allocator, args: []const []const u8) !void {
     if (args.len < 1) {
-        log.err("Usage: zigviz start <container-id>", .{});
+        log.err("Usage: zviz start <container-id>", .{});
         return errors.Error.InvalidContainerId;
     }
 
@@ -566,7 +566,7 @@ pub fn start(allocator: std.mem.Allocator, args: []const []const u8) !void {
 /// Send a signal to a container
 pub fn kill(allocator: std.mem.Allocator, args: []const []const u8) !void {
     if (args.len < 1) {
-        log.err("Usage: zigviz kill <container-id> [signal]", .{});
+        log.err("Usage: zviz kill <container-id> [signal]", .{});
         return errors.Error.InvalidContainerId;
     }
 
@@ -602,7 +602,7 @@ pub fn kill(allocator: std.mem.Allocator, args: []const []const u8) !void {
 /// Delete a stopped container
 pub fn delete(allocator: std.mem.Allocator, args: []const []const u8) !void {
     if (args.len < 1) {
-        log.err("Usage: zigviz delete <container-id>", .{});
+        log.err("Usage: zviz delete <container-id>", .{});
         return errors.Error.InvalidContainerId;
     }
 
@@ -635,7 +635,7 @@ pub fn delete(allocator: std.mem.Allocator, args: []const []const u8) !void {
 /// Query container state
 pub fn state(allocator: std.mem.Allocator, args: []const []const u8) !void {
     if (args.len < 1) {
-        log.err("Usage: zigviz state <container-id>", .{});
+        log.err("Usage: zviz state <container-id>", .{});
         return errors.Error.InvalidContainerId;
     }
 
@@ -715,7 +715,7 @@ fn parseSignal(name: []const u8) i32 {
 /// Run a container (create + start in one step)
 pub fn run(allocator: std.mem.Allocator, args: []const []const u8) !void {
     if (args.len < 2) {
-        log.err("Usage: zigviz run <container-id> <bundle>", .{});
+        log.err("Usage: zviz run <container-id> <bundle>", .{});
         return errors.Error.InvalidBundlePath;
     }
 
@@ -767,7 +767,7 @@ pub fn list(allocator: std.mem.Allocator) !void {
 /// Execute a command in a running container
 pub fn exec(allocator: std.mem.Allocator, args: []const []const u8) !void {
     if (args.len < 2) {
-        log.err("Usage: zigviz exec <container-id> <command> [args...]", .{});
+        log.err("Usage: zviz exec <container-id> <command> [args...]", .{});
         return errors.Error.InvalidContainerId;
     }
 
@@ -943,7 +943,7 @@ pub fn spec(args: []const []const u8) !void {
         \\    "path": "rootfs",
         \\    "readonly": true
         \\  },
-        \\  "hostname": "zigviz-container",
+        \\  "hostname": "zviz-container",
         \\  "mounts": [
         \\    { "destination": "/proc", "type": "proc", "source": "proc" },
         \\    { "destination": "/dev", "type": "tmpfs", "source": "tmpfs", "options": ["nosuid", "strictatime", "mode=755", "size=65536k"] },
@@ -1037,9 +1037,9 @@ test "extractAnnotationValue" {
     const json =
         \\{
         \\  "annotations": {
-        \\    "zigviz.io/profile": "ci-runner",
-        \\    "zigviz.io/audit": "true",
-        \\    "zigviz.io/broker-timeout": "200"
+        \\    "zviz.io/profile": "ci-runner",
+        \\    "zviz.io/audit": "true",
+        \\    "zviz.io/broker-timeout": "200"
         \\  }
         \\}
     ;
@@ -1060,7 +1060,7 @@ test "extractAnnotationValue" {
     try std.testing.expectEqualStrings("200", timeout.?);
 
     // Test non-existent key
-    const missing = extractAnnotationValue(json, "zigviz.io/nonexistent");
+    const missing = extractAnnotationValue(json, "zviz.io/nonexistent");
     try std.testing.expect(missing == null);
 }
 
@@ -1071,17 +1071,17 @@ test "container builtin profile loading" {
     // Test ci-runner profile
     const ci = container.loadBuiltinProfile("ci-runner");
     try std.testing.expect(ci != null);
-    try std.testing.expectEqualStrings("zigviz-ci", ci.?.name);
+    try std.testing.expectEqualStrings("zviz-ci", ci.?.name);
 
     // Test hostile-tenant profile
     const hostile = container.loadBuiltinProfile("hostile-tenant");
     try std.testing.expect(hostile != null);
-    try std.testing.expectEqualStrings("zigviz-hostile", hostile.?.name);
+    try std.testing.expectEqualStrings("zviz-hostile", hostile.?.name);
 
     // Test minimal profile
     const minimal = container.loadBuiltinProfile("minimal");
     try std.testing.expect(minimal != null);
-    try std.testing.expectEqualStrings("zigviz-minimal", minimal.?.name);
+    try std.testing.expectEqualStrings("zviz-minimal", minimal.?.name);
 
     // Test unknown profile
     const unknown = container.loadBuiltinProfile("unknown-profile");

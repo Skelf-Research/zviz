@@ -1,6 +1,6 @@
 # Profile Schema Reference
 
-Complete reference for the ZigViz security profile schema.
+Complete reference for the ZViz security profile schema.
 
 ## Schema Version
 
@@ -321,13 +321,13 @@ capabilities:
 
 ```bash
 # Validate profile syntax
-zigviz compile --validate my-profile.yaml
+zviz compile --validate my-profile.yaml
 
 # Check host compatibility
-zigviz compile --check-host my-profile.yaml
+zviz compile --check-host my-profile.yaml
 
 # Show compiled rules
-zigviz compile --show my-profile.yaml
+zviz compile --show my-profile.yaml
 ```
 
 ## See Also

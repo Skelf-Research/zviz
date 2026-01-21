@@ -1,6 +1,6 @@
 # CI Runner Profile (Concrete)
 
-This document defines a concrete CI runner profile using the ZigViz schema. It is intended for build and test workloads with strict filesystem isolation and controlled egress.
+This document defines a concrete CI runner profile using the ZViz schema. It is intended for build and test workloads with strict filesystem isolation and controlled egress.
 
 ## Intent
 
@@ -18,7 +18,7 @@ This document defines a concrete CI runner profile using the ZigViz schema. It i
 ## Profile
 
 ```yaml
-name: zigviz-ci
+name: zviz-ci
 version: 0.1
 mode: high-density
 
@@ -135,7 +135,7 @@ filesystem:
 
 lsm:
   type: apparmor
-  profile: zigviz-ci
+  profile: zviz-ci
 
 network:
   mode: allow-cidr

@@ -1,10 +1,10 @@
 # Getting Started
 
-Welcome to ZigViz! This guide will help you get up and running with ZigViz in just a few minutes.
+Welcome to ZViz! This guide will help you get up and running with ZViz in just a few minutes.
 
-## What is ZigViz?
+## What is ZViz?
 
-ZigViz is a container isolation runtime that provides strong security guarantees with minimal performance overhead. It's designed for running untrusted workloads like:
+ZViz is a container isolation runtime that provides strong security guarantees with minimal performance overhead. It's designed for running untrusted workloads like:
 
 - CI/CD pipelines
 - Multi-tenant applications
@@ -13,7 +13,7 @@ ZigViz is a container isolation runtime that provides strong security guarantees
 
 ## How is it Different?
 
-| Feature | runc | gVisor | ZigViz |
+| Feature | runc | gVisor | ZViz |
 |---------|------|--------|--------|
 | Kernel shared with host | Yes | No | Yes (isolated) |
 | Syscall interception | No | All | Security-relevant only |
@@ -23,7 +23,7 @@ ZigViz is a container isolation runtime that provides strong security guarantees
 
 ## Prerequisites
 
-Before installing ZigViz, ensure your system meets these requirements:
+Before installing ZViz, ensure your system meets these requirements:
 
 ### Minimum Requirements
 
@@ -49,7 +49,7 @@ For full functionality, these are recommended:
 You can check your system compatibility:
 
 ```bash
-zigviz validate
+zviz validate
 ```
 
 ## Quick Links
@@ -60,7 +60,7 @@ zigviz validate
 
     ---
 
-    Install ZigViz on your system
+    Install ZViz on your system
 
     [:octicons-arrow-right-24: Install](installation.md)
 
@@ -84,7 +84,7 @@ zigviz validate
 
 ## Next Steps
 
-1. [Install ZigViz](installation.md)
+1. [Install ZViz](installation.md)
 2. [Run your first container](quickstart.md)
 3. [Learn about profiles](../user-guide/profiles.md)
 4. [Set up Kubernetes integration](../operator-guide/kubernetes.md)

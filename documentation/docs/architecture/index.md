@@ -1,12 +1,12 @@
 # Architecture Overview
 
-ZigViz is a container isolation runtime that achieves gVisor-equivalent security outcomes through layered kernel enforcement rather than syscall emulation.
+ZViz is a container isolation runtime that achieves gVisor-equivalent security outcomes through layered kernel enforcement rather than syscall emulation.
 
 ## Design Philosophy
 
 ### Core Thesis
 
-gVisor's security comes from syscall interposition via a userspace kernel. ZigViz reaches the same policy outcomes without emulating Linux by:
+gVisor's security comes from syscall interposition via a userspace kernel. ZViz reaches the same policy outcomes without emulating Linux by:
 
 1. **Composing kernel primitives** — Namespaces, seccomp, LSMs, cgroups
 2. **Brokering only when necessary** — Syscalls needing argument inspection
@@ -14,7 +14,7 @@ gVisor's security comes from syscall interposition via a userspace kernel. ZigVi
 
 ### Trade-offs
 
-| Aspect | gVisor | ZigViz |
+| Aspect | gVisor | ZViz |
 |--------|--------|--------|
 | Kernel exposure | Minimal (sentry) | Controlled (filtered) |
 | Syscall overhead | High (all syscalls) | Low (brokered only) |
@@ -53,7 +53,7 @@ gVisor's security comes from syscall interposition via a userspace kernel. ZigVi
                                                    │
                                                    ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                         ZigViz Broker                                │
+│                         ZViz Broker                                │
 │  ┌───────────────────────────────────────────────────────────────┐  │
 │  │                    Syscall Mediators                           │  │
 │  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐  │  │
@@ -131,7 +131,7 @@ The broker is the central policy decision point for mediated syscalls.
 
 ```
 ┌─────────────────────────────────────────┐
-│              ZigViz Broker               │
+│              ZViz Broker               │
 │                                          │
 │  ┌────────────────────────────────────┐ │
 │  │         Notification Listener       │ │

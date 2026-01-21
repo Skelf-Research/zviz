@@ -1,11 +1,11 @@
 # CLI Reference
 
-Complete reference for the ZigViz command-line interface.
+Complete reference for the ZViz command-line interface.
 
 ## Synopsis
 
 ```
-zigviz [global-options] <command> [command-options] [arguments]
+zviz [global-options] <command> [command-options] [arguments]
 ```
 
 ## Global Options
@@ -15,7 +15,7 @@ zigviz [global-options] <command> [command-options] [arguments]
 | `--log-level <level>` | Set log level: `debug`, `info`, `warn`, `error` |
 | `--log-format <format>` | Log format: `text`, `json` |
 | `--config <path>` | Path to configuration file |
-| `--state-dir <path>` | State directory (default: `/var/lib/zigviz`) |
+| `--state-dir <path>` | State directory (default: `/var/lib/zviz`) |
 | `--help`, `-h` | Show help |
 | `--version`, `-v` | Show version |
 
@@ -28,7 +28,7 @@ These commands implement the OCI Runtime Specification.
 Create a new container.
 
 ```bash
-zigviz create [options] <container-id> <bundle-path>
+zviz create [options] <container-id> <bundle-path>
 ```
 
 **Options:**
@@ -44,7 +44,7 @@ zigviz create [options] <container-id> <bundle-path>
 **Example:**
 
 ```bash
-sudo zigviz create my-container /path/to/bundle
+sudo zviz create my-container /path/to/bundle
 ```
 
 ### start
@@ -52,13 +52,13 @@ sudo zigviz create my-container /path/to/bundle
 Start a created container.
 
 ```bash
-zigviz start <container-id>
+zviz start <container-id>
 ```
 
 **Example:**
 
 ```bash
-sudo zigviz start my-container
+sudo zviz start my-container
 ```
 
 ### run
@@ -66,7 +66,7 @@ sudo zigviz start my-container
 Create and start a container in one step.
 
 ```bash
-zigviz run [options] <container-id> <bundle-path> [command] [args...]
+zviz run [options] <container-id> <bundle-path> [command] [args...]
 ```
 
 **Options:**
@@ -89,16 +89,16 @@ zigviz run [options] <container-id> <bundle-path> [command] [args...]
 
 ```bash
 # Basic run
-sudo zigviz run test-container . /bin/sh
+sudo zviz run test-container . /bin/sh
 
 # With resource limits
-sudo zigviz run --memory 256M --cpus 0.5 limited . /bin/sh
+sudo zviz run --memory 256M --cpus 0.5 limited . /bin/sh
 
 # With security profile
-sudo zigviz run --profile ci-runner build . /bin/sh -c "make"
+sudo zviz run --profile ci-runner build . /bin/sh -c "make"
 
 # Detached
-sudo zigviz run --detach web-server . /usr/bin/nginx
+sudo zviz run --detach web-server . /usr/bin/nginx
 ```
 
 ### exec
@@ -106,7 +106,7 @@ sudo zigviz run --detach web-server . /usr/bin/nginx
 Execute a command in a running container.
 
 ```bash
-zigviz exec [options] <container-id> <command> [args...]
+zviz exec [options] <container-id> <command> [args...]
 ```
 
 **Options:**
@@ -121,8 +121,8 @@ zigviz exec [options] <container-id> <command> [args...]
 **Example:**
 
 ```bash
-sudo zigviz exec my-container /bin/sh
-sudo zigviz exec --user 1000:1000 my-container /bin/ls
+sudo zviz exec my-container /bin/sh
+sudo zviz exec --user 1000:1000 my-container /bin/ls
 ```
 
 ### kill
@@ -130,7 +130,7 @@ sudo zigviz exec --user 1000:1000 my-container /bin/ls
 Send a signal to a container.
 
 ```bash
-zigviz kill [options] <container-id> [signal]
+zviz kill [options] <container-id> [signal]
 ```
 
 **Options:**
@@ -142,9 +142,9 @@ zigviz kill [options] <container-id> [signal]
 **Example:**
 
 ```bash
-sudo zigviz kill my-container
-sudo zigviz kill my-container SIGTERM
-sudo zigviz kill --all my-container SIGKILL
+sudo zviz kill my-container
+sudo zviz kill my-container SIGTERM
+sudo zviz kill --all my-container SIGKILL
 ```
 
 ### delete
@@ -152,7 +152,7 @@ sudo zigviz kill --all my-container SIGKILL
 Delete a container.
 
 ```bash
-zigviz delete [options] <container-id>
+zviz delete [options] <container-id>
 ```
 
 **Options:**
@@ -164,8 +164,8 @@ zigviz delete [options] <container-id>
 **Example:**
 
 ```bash
-sudo zigviz delete my-container
-sudo zigviz delete --force stuck-container
+sudo zviz delete my-container
+sudo zviz delete --force stuck-container
 ```
 
 ### state
@@ -173,7 +173,7 @@ sudo zigviz delete --force stuck-container
 Query container state.
 
 ```bash
-zigviz state <container-id>
+zviz state <container-id>
 ```
 
 **Output:**
@@ -194,8 +194,8 @@ zigviz state <container-id>
 List all containers.
 
 ```bash
-zigviz list
-zigviz ps
+zviz list
+zviz ps
 ```
 
 **Output:**
@@ -211,7 +211,7 @@ other-container   stopped   0       /other/bundle
 Generate an OCI runtime specification.
 
 ```bash
-zigviz spec [options]
+zviz spec [options]
 ```
 
 **Options:**
@@ -225,8 +225,8 @@ zigviz spec [options]
 **Example:**
 
 ```bash
-zigviz spec
-zigviz spec --rootless
+zviz spec
+zviz spec --rootless
 ```
 
 ## Policy Commands
@@ -236,7 +236,7 @@ zigviz spec --rootless
 Compile a security profile.
 
 ```bash
-zigviz compile [options] <profile.yaml>
+zviz compile [options] <profile.yaml>
 ```
 
 **Options:**
@@ -253,16 +253,16 @@ zigviz compile [options] <profile.yaml>
 
 ```bash
 # Compile a profile
-zigviz compile my-profile.yaml
+zviz compile my-profile.yaml
 
 # Validate without writing
-zigviz compile --validate my-profile.yaml
+zviz compile --validate my-profile.yaml
 
 # List built-in profiles
-zigviz compile --list
+zviz compile --list
 
 # Show profile details
-zigviz compile --show ci-runner
+zviz compile --show ci-runner
 ```
 
 ## Validation Commands
@@ -272,7 +272,7 @@ zigviz compile --show ci-runner
 Run system validation tests.
 
 ```bash
-zigviz validate
+zviz validate
 ```
 
 **Output:**
@@ -290,7 +290,7 @@ zigviz validate
 Run security audit.
 
 ```bash
-zigviz audit [options]
+zviz audit [options]
 ```
 
 **Options:**
@@ -305,7 +305,7 @@ zigviz audit [options]
 Run escape attempt tests.
 
 ```bash
-zigviz escape-test
+zviz escape-test
 ```
 
 Runs a suite of tests that attempt to escape the sandbox. All tests should fail (attacks should be blocked).
@@ -315,7 +315,7 @@ Runs a suite of tests that attempt to escape the sandbox. All tests should fail 
 Run performance benchmarks.
 
 ```bash
-zigviz benchmark [options]
+zviz benchmark [options]
 ```
 
 **Options:**
@@ -330,10 +330,10 @@ zigviz benchmark [options]
 Compare policy with gVisor.
 
 ```bash
-zigviz compare
+zviz compare
 ```
 
-Compares ZigViz policy outcomes with expected gVisor behavior.
+Compares ZViz policy outcomes with expected gVisor behavior.
 
 ## Monitoring Commands
 
@@ -342,7 +342,7 @@ Compares ZigViz policy outcomes with expected gVisor behavior.
 Export or serve Prometheus metrics.
 
 ```bash
-zigviz metrics [subcommand] [options]
+zviz metrics [subcommand] [options]
 ```
 
 **Subcommands:**
@@ -363,11 +363,11 @@ zigviz metrics [subcommand] [options]
 
 ```bash
 # Export to stdout
-zigviz metrics
+zviz metrics
 
 # Start HTTP server
-zigviz metrics serve
-zigviz metrics serve --addr 0.0.0.0:9090
+zviz metrics serve
+zviz metrics serve --addr 0.0.0.0:9090
 ```
 
 ## Configuration Commands
@@ -377,7 +377,7 @@ zigviz metrics serve --addr 0.0.0.0:9090
 Show or generate configuration.
 
 ```bash
-zigviz config [options]
+zviz config [options]
 ```
 
 **Options:**
@@ -390,19 +390,19 @@ zigviz config [options]
 
 ```bash
 # Show current config
-zigviz config
+zviz config
 
 # Generate default config
-zigviz config --generate > /etc/zigviz/config.yaml
+zviz config --generate > /etc/zviz/config.yaml
 ```
 
 ## Environment Variables
 
 | Variable | Description |
 |----------|-------------|
-| `ZIGVIZ_LOG_LEVEL` | Log level |
-| `ZIGVIZ_STATE_DIR` | State directory |
-| `ZIGVIZ_CONFIG` | Config file path |
+| `ZVIZ_LOG_LEVEL` | Log level |
+| `ZVIZ_STATE_DIR` | State directory |
+| `ZVIZ_CONFIG` | Config file path |
 
 ## Exit Codes
 

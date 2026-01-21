@@ -23,7 +23,7 @@ pub const ExitCode = struct {
     pub const COMMAND_NOT_FOUND: u8 = 127;
 };
 
-/// ZigViz error categories
+/// ZViz error categories
 pub const Error = error{
     // Container lifecycle errors
     ContainerNotFound,
@@ -105,7 +105,7 @@ pub const ErrorContext = struct {
     }
 };
 
-/// Convert OS error to ZigViz error
+/// Convert OS error to ZViz error
 pub fn fromOsError(err: std.posix.E) Error {
     return switch (err) {
         .PERM, .ACCES => Error.PermissionDenied,
@@ -121,7 +121,7 @@ pub fn getErrno() i32 {
     return @intFromEnum(std.posix.errno(std.posix.system.getErrno()));
 }
 
-/// Convert ZigViz error to exit code
+/// Convert ZViz error to exit code
 pub fn toExitCode(err: Error) u8 {
     return switch (err) {
         Error.ContainerNotFound => ExitCode.CONTAINER_NOT_FOUND,

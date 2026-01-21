@@ -1,6 +1,6 @@
 # Hardening Guide
 
-Secure your ZigViz deployment.
+Secure your ZViz deployment.
 
 ## Kernel Hardening
 

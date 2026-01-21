@@ -1,6 +1,6 @@
-# Pod with ZigViz profile selection via annotations
+# Pod with ZViz profile selection via annotations
 #
-# ZigViz supports profile selection through pod annotations.
+# ZViz supports profile selection through pod annotations.
 # This allows fine-grained control over security policies per workload.
 
 ---
@@ -12,16 +12,16 @@ metadata:
     app: ci-runner
   annotations:
     # Select the ci-runner profile for this workload
-    zigviz.io/profile: "ci-runner"
+    zviz.io/profile: "ci-runner"
 
     # Optional: Enable audit logging for this pod
-    zigviz.io/audit: "true"
+    zviz.io/audit: "true"
 
     # Optional: Set broker timeout (milliseconds)
-    zigviz.io/broker-timeout: "200"
+    zviz.io/broker-timeout: "200"
 
 spec:
-  runtimeClassName: zigviz
+  runtimeClassName: zviz
 
   containers:
   - name: ci-runner
@@ -74,14 +74,14 @@ metadata:
     app: secure-workload
   annotations:
     # Use the strictest profile for untrusted code
-    zigviz.io/profile: "hostile-tenant"
+    zviz.io/profile: "hostile-tenant"
 
     # Enable all security features
-    zigviz.io/audit: "true"
-    zigviz.io/strict-mode: "true"
+    zviz.io/audit: "true"
+    zviz.io/strict-mode: "true"
 
 spec:
-  runtimeClassName: zigviz
+  runtimeClassName: zviz
 
   containers:
   - name: sandbox

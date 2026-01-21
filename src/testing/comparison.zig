@@ -1,7 +1,7 @@
 const std = @import("std");
 const log = @import("../log.zig");
 
-/// gVisor vs ZigViz Comparison Test Suite
+/// gVisor vs ZViz Comparison Test Suite
 /// Runs identical workloads on both runtimes and compares outcomes
 
 // ============================================================================
@@ -27,17 +27,17 @@ pub const TestOutcome = enum {
 pub const ComparisonResult = struct {
     test_name: []const u8,
     category: []const u8,
-    zigviz_outcome: TestOutcome,
+    zviz_outcome: TestOutcome,
     gvisor_outcome: TestOutcome,
     matches: bool,
     notes: ?[]const u8 = null,
 
     pub fn print(self: *const ComparisonResult) void {
         const match_str = if (self.matches) "MATCH" else "DIFFER";
-        log.info("[{s}] {s}: ZigViz={s} gVisor={s}", .{
+        log.info("[{s}] {s}: ZViz={s} gVisor={s}", .{
             match_str,
             self.test_name,
-            self.zigviz_outcome.string(),
+            self.zviz_outcome.string(),
             self.gvisor_outcome.string(),
         });
         if (self.notes) |n| {
@@ -73,7 +73,7 @@ pub const ComparisonSuite = struct {
     }
 
     pub fn printSummary(self: *const ComparisonSuite) void {
-        log.info("=== gVisor vs ZigViz Comparison Summary ===", .{});
+        log.info("=== gVisor vs ZViz Comparison Summary ===", .{});
         log.info("Total tests: {d}", .{self.matches + self.differs});
         log.info("Matching outcomes: {d}", .{self.matches});
         log.info("Different outcomes: {d}", .{self.differs});
@@ -105,14 +105,14 @@ pub const ComparisonSuite = struct {
                 \\    {{
                 \\      "test": "{s}",
                 \\      "category": "{s}",
-                \\      "zigviz": "{s}",
+                \\      "zviz": "{s}",
                 \\      "gvisor": "{s}",
                 \\      "matches": {s}
                 \\    }}
             , .{
                 result.test_name,
                 result.category,
-                result.zigviz_outcome.string(),
+                result.zviz_outcome.string(),
                 result.gvisor_outcome.string(),
                 if (result.matches) "true" else "false",
             });
@@ -433,13 +433,13 @@ pub const GVisorExpected = struct {
 };
 
 // ============================================================================
-// ZigViz Policy for Comparison
+// ZViz Policy for Comparison
 // ============================================================================
 
-/// Get ZigViz expected outcome based on default ci-runner profile
-fn getZigVizOutcome(syscall_name: []const u8) TestOutcome {
+/// Get ZViz expected outcome based on default ci-runner profile
+fn getZVizOutcome(syscall_name: []const u8) TestOutcome {
     // Based on the ci-runner profile syscall lists
-    const zigviz_blocked = [_][]const u8{
+    const zviz_blocked = [_][]const u8{
         "init_module",
         "delete_module",
         "finit_module",
@@ -464,7 +464,7 @@ fn getZigVizOutcome(syscall_name: []const u8) TestOutcome {
         "unshare", // without proper flags
     };
 
-    for (zigviz_blocked) |blocked| {
+    for (zviz_blocked) |blocked| {
         if (std.mem.eql(u8, syscall_name, blocked)) {
             return .denied;
         }
@@ -478,7 +478,7 @@ fn getZigVizOutcome(syscall_name: []const u8) TestOutcome {
 // Comparison Tests
 // ============================================================================
 
-/// Compare syscall policies between ZigViz and gVisor
+/// Compare syscall policies between ZViz and gVisor
 pub fn compareSyscallPolicies(allocator: std.mem.Allocator) !ComparisonSuite {
     var suite = ComparisonSuite.init(allocator);
     errdefer suite.deinit();
@@ -536,16 +536,16 @@ pub fn compareSyscallPolicies(allocator: std.mem.Allocator) !ComparisonSuite {
         else
             .not_tested;
 
-        const zigviz_outcome = getZigVizOutcome(syscall);
+        const zviz_outcome = getZVizOutcome(syscall);
 
-        const matches = (gvisor_outcome == zigviz_outcome) or
+        const matches = (gvisor_outcome == zviz_outcome) or
             (gvisor_outcome == .not_tested) or
-            (zigviz_outcome == .not_tested);
+            (zviz_outcome == .not_tested);
 
         try suite.addResult(.{
             .test_name = syscall,
             .category = "syscall",
-            .zigviz_outcome = zigviz_outcome,
+            .zviz_outcome = zviz_outcome,
             .gvisor_outcome = gvisor_outcome,
             .matches = matches,
         });
@@ -565,26 +565,26 @@ pub fn compareFileAccessPolicies(allocator: std.mem.Allocator) !ComparisonSuite 
         path: []const u8,
         operation: []const u8,
         gvisor: TestOutcome,
-        zigviz: TestOutcome,
+        zviz: TestOutcome,
     }{
         // Both should block
-        .{ .path = "/etc/shadow", .operation = "read", .gvisor = .denied, .zigviz = .denied },
-        .{ .path = "/etc/passwd", .operation = "write", .gvisor = .denied, .zigviz = .denied },
-        .{ .path = "/proc/kcore", .operation = "read", .gvisor = .denied, .zigviz = .denied },
-        .{ .path = "/dev/mem", .operation = "read", .gvisor = .denied, .zigviz = .denied },
-        .{ .path = "/dev/kmem", .operation = "read", .gvisor = .denied, .zigviz = .denied },
+        .{ .path = "/etc/shadow", .operation = "read", .gvisor = .denied, .zviz =.denied },
+        .{ .path = "/etc/passwd", .operation = "write", .gvisor = .denied, .zviz =.denied },
+        .{ .path = "/proc/kcore", .operation = "read", .gvisor = .denied, .zviz =.denied },
+        .{ .path = "/dev/mem", .operation = "read", .gvisor = .denied, .zviz =.denied },
+        .{ .path = "/dev/kmem", .operation = "read", .gvisor = .denied, .zviz =.denied },
 
         // Both should allow
-        .{ .path = "/etc/passwd", .operation = "read", .gvisor = .allowed, .zigviz = .allowed },
-        .{ .path = "/tmp/test", .operation = "write", .gvisor = .allowed, .zigviz = .allowed },
-        .{ .path = "/dev/null", .operation = "write", .gvisor = .allowed, .zigviz = .allowed },
-        .{ .path = "/dev/zero", .operation = "read", .gvisor = .allowed, .zigviz = .allowed },
-        .{ .path = "/dev/urandom", .operation = "read", .gvisor = .allowed, .zigviz = .allowed },
+        .{ .path = "/etc/passwd", .operation = "read", .gvisor = .allowed, .zviz =.allowed },
+        .{ .path = "/tmp/test", .operation = "write", .gvisor = .allowed, .zviz =.allowed },
+        .{ .path = "/dev/null", .operation = "write", .gvisor = .allowed, .zviz =.allowed },
+        .{ .path = "/dev/zero", .operation = "read", .gvisor = .allowed, .zviz =.allowed },
+        .{ .path = "/dev/urandom", .operation = "read", .gvisor = .allowed, .zviz =.allowed },
 
         // Proc filesystem
-        .{ .path = "/proc/self/status", .operation = "read", .gvisor = .allowed, .zigviz = .allowed },
-        .{ .path = "/proc/self/maps", .operation = "read", .gvisor = .allowed, .zigviz = .allowed },
-        .{ .path = "/proc/1/root", .operation = "read", .gvisor = .denied, .zigviz = .denied },
+        .{ .path = "/proc/self/status", .operation = "read", .gvisor = .allowed, .zviz =.allowed },
+        .{ .path = "/proc/self/maps", .operation = "read", .gvisor = .allowed, .zviz =.allowed },
+        .{ .path = "/proc/1/root", .operation = "read", .gvisor = .denied, .zviz =.denied },
     };
 
     for (file_tests) |test_case| {
@@ -594,9 +594,9 @@ pub fn compareFileAccessPolicies(allocator: std.mem.Allocator) !ComparisonSuite 
         try suite.addResult(.{
             .test_name = name,
             .category = "filesystem",
-            .zigviz_outcome = test_case.zigviz,
+            .zviz_outcome = test_case.zviz,
             .gvisor_outcome = test_case.gvisor,
-            .matches = test_case.gvisor == test_case.zigviz,
+            .matches = test_case.gvisor == test_case.zviz,
         });
     }
 
@@ -613,35 +613,35 @@ pub fn compareNetworkPolicies(allocator: std.mem.Allocator) !ComparisonSuite {
     const network_tests = [_]struct {
         name: []const u8,
         gvisor: TestOutcome,
-        zigviz: TestOutcome,
+        zviz: TestOutcome,
         note: ?[]const u8,
     }{
         // Raw sockets - both block
-        .{ .name = "AF_PACKET raw socket", .gvisor = .denied, .zigviz = .denied, .note = null },
-        .{ .name = "AF_NETLINK socket", .gvisor = .denied, .zigviz = .denied, .note = "Some operations allowed" },
+        .{ .name = "AF_PACKET raw socket", .gvisor = .denied, .zviz =.denied, .note = null },
+        .{ .name = "AF_NETLINK socket", .gvisor = .denied, .zviz =.denied, .note = "Some operations allowed" },
 
         // Standard sockets - both allow
-        .{ .name = "AF_INET TCP socket", .gvisor = .allowed, .zigviz = .allowed, .note = null },
-        .{ .name = "AF_INET UDP socket", .gvisor = .allowed, .zigviz = .allowed, .note = null },
-        .{ .name = "AF_INET6 TCP socket", .gvisor = .allowed, .zigviz = .allowed, .note = null },
-        .{ .name = "AF_UNIX socket", .gvisor = .allowed, .zigviz = .allowed, .note = null },
+        .{ .name = "AF_INET TCP socket", .gvisor = .allowed, .zviz =.allowed, .note = null },
+        .{ .name = "AF_INET UDP socket", .gvisor = .allowed, .zviz =.allowed, .note = null },
+        .{ .name = "AF_INET6 TCP socket", .gvisor = .allowed, .zviz =.allowed, .note = null },
+        .{ .name = "AF_UNIX socket", .gvisor = .allowed, .zviz =.allowed, .note = null },
 
         // Egress - configurable
-        .{ .name = "Egress to public internet", .gvisor = .allowed, .zigviz = .denied, .note = "ZigViz blocks by default, gVisor allows" },
-        .{ .name = "Egress to private network", .gvisor = .allowed, .zigviz = .allowed, .note = "Configurable via CIDR allowlist" },
+        .{ .name = "Egress to public internet", .gvisor = .allowed, .zviz =.denied, .note = "ZViz blocks by default, gVisor allows" },
+        .{ .name = "Egress to private network", .gvisor = .allowed, .zviz =.allowed, .note = "Configurable via CIDR allowlist" },
 
         // Bind operations
-        .{ .name = "Bind to localhost", .gvisor = .allowed, .zigviz = .allowed, .note = null },
-        .{ .name = "Bind to privileged port (<1024)", .gvisor = .denied, .zigviz = .denied, .note = "Unless CAP_NET_BIND_SERVICE" },
+        .{ .name = "Bind to localhost", .gvisor = .allowed, .zviz =.allowed, .note = null },
+        .{ .name = "Bind to privileged port (<1024)", .gvisor = .denied, .zviz =.denied, .note = "Unless CAP_NET_BIND_SERVICE" },
     };
 
     for (network_tests) |test_case| {
         try suite.addResult(.{
             .test_name = test_case.name,
             .category = "network",
-            .zigviz_outcome = test_case.zigviz,
+            .zviz_outcome = test_case.zviz,
             .gvisor_outcome = test_case.gvisor,
-            .matches = test_case.gvisor == test_case.zigviz,
+            .matches = test_case.gvisor == test_case.zviz,
             .notes = test_case.note,
         });
     }
@@ -651,7 +651,7 @@ pub fn compareNetworkPolicies(allocator: std.mem.Allocator) !ComparisonSuite {
 
 /// Run full comparison suite
 pub fn runFullComparison(allocator: std.mem.Allocator) !void {
-    log.info("=== gVisor vs ZigViz Policy Comparison ===", .{});
+    log.info("=== gVisor vs ZViz Policy Comparison ===", .{});
     log.info("Comparing default security policies...\n", .{});
 
     // Syscall comparison
@@ -713,7 +713,7 @@ test "comparison suite" {
     try suite.addResult(.{
         .test_name = "test1",
         .category = "syscall",
-        .zigviz_outcome = .denied,
+        .zviz_outcome = .denied,
         .gvisor_outcome = .denied,
         .matches = true,
     });
@@ -721,7 +721,7 @@ test "comparison suite" {
     try suite.addResult(.{
         .test_name = "test2",
         .category = "syscall",
-        .zigviz_outcome = .allowed,
+        .zviz_outcome = .allowed,
         .gvisor_outcome = .denied,
         .matches = false,
     });

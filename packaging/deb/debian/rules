@@ -1,0 +1,17 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	# Binary is pre-built, skip build step
+
+override_dh_auto_install:
+	install -D -m 755 zviz debian/zviz/usr/bin/zviz
+	install -D -m 644 ../../../deploy/kubernetes/runtime-class.yaml debian/zviz/usr/share/zviz/runtime-class.yaml
+
+override_dh_strip:
+	# Binary is already stripped, skip
+
+override_dh_shlibdeps:
+	# Static binary, skip shared library dependencies

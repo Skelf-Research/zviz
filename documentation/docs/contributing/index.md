@@ -1,13 +1,13 @@
-# Contributing to ZigViz
+# Contributing to ZViz
 
-Thank you for your interest in contributing to ZigViz! This guide will help you get started.
+Thank you for your interest in contributing to ZViz! This guide will help you get started.
 
 ## Ways to Contribute
 
 - **Report bugs** — Open an issue with a clear description
 - **Suggest features** — Discuss ideas in GitHub discussions
 - **Submit patches** — Fix bugs or implement features
-- **Improve documentation** — Help others understand ZigViz
+- **Improve documentation** — Help others understand ZViz
 - **Review PRs** — Help review pending changes
 
 ## Getting Started
@@ -22,8 +22,8 @@ Thank you for your interest in contributing to ZigViz! This guide will help you 
 
 ```bash
 # Clone the repository
-git clone https://github.com/zigviz/zigviz.git
-cd zigviz
+git clone https://github.com/zviz/zviz.git
+cd zviz
 
 # Build
 zig build
@@ -38,7 +38,7 @@ zig build test -- --test-filter "broker"
 ### Project Structure
 
 ```
-zigviz/
+zviz/
 ├── src/
 │   ├── main.zig           # Entry point
 │   ├── broker/            # Syscall broker
@@ -85,7 +85,7 @@ zig build test-integration
 zig build test-all
 
 # Escape tests (security)
-sudo ./zig-out/bin/zigviz escape-test
+sudo ./zig-out/bin/zviz escape-test
 ```
 
 ### 4. Submit PR
@@ -150,7 +150,7 @@ When contributing:
 4. **Audit logging** — Log security-relevant events
 5. **Fuzz testing** — Add fuzz tests for parsers
 
-Report security issues to security@zigviz.io (see [Security Policy](../security/index.md)).
+Report security issues to security@zviz.io (see [Security Policy](../security/index.md)).
 
 ## Documentation
 
@@ -182,11 +182,11 @@ mkdocs serve
 
 - **GitHub Discussions** — General questions
 - **GitHub Issues** — Bug reports, feature requests
-- **Email** — maintainers@zigviz.io
+- **Email** — maintainers@zviz.io
 
 ## Code of Conduct
 
-Be respectful and constructive. See [CODE_OF_CONDUCT.md](https://github.com/zigviz/zigviz/blob/main/CODE_OF_CONDUCT.md).
+Be respectful and constructive. See [CODE_OF_CONDUCT.md](https://github.com/zviz/zviz/blob/main/CODE_OF_CONDUCT.md).
 
 ## License
 

@@ -4,7 +4,7 @@ This tutorial walks you through creating and running an isolated container step 
 
 ## Prerequisites
 
-- ZigViz installed ([Installation Guide](installation.md))
+- ZViz installed ([Installation Guide](installation.md))
 - Root access or appropriate capabilities
 - Basic familiarity with containers
 
@@ -38,7 +38,7 @@ ls rootfs/
 ### Generate the OCI Spec
 
 ```bash
-zigviz spec
+zviz spec
 ```
 
 This creates `config.json` with secure defaults:
@@ -64,7 +64,7 @@ This creates `config.json` with secure defaults:
 ## Step 2: Create the Container
 
 ```bash
-sudo zigviz create my-first-container .
+sudo zviz create my-first-container .
 ```
 
 This command:
@@ -78,7 +78,7 @@ This command:
 Check the container state:
 
 ```bash
-zigviz state my-first-container
+zviz state my-first-container
 ```
 
 Output:
@@ -95,13 +95,13 @@ Output:
 ## Step 3: Start the Container
 
 ```bash
-sudo zigviz start my-first-container
+sudo zviz start my-first-container
 ```
 
 The container is now running. Check its state:
 
 ```bash
-zigviz state my-first-container
+zviz state my-first-container
 ```
 
 Output:
@@ -121,10 +121,10 @@ Run commands inside the container:
 
 ```bash
 # Interactive shell
-sudo zigviz exec my-first-container /bin/sh
+sudo zviz exec my-first-container /bin/sh
 
 # Single command
-sudo zigviz exec my-first-container /bin/cat /etc/os-release
+sudo zviz exec my-first-container /bin/cat /etc/os-release
 ```
 
 ## Step 5: Explore Security Isolation
@@ -133,11 +133,11 @@ sudo zigviz exec my-first-container /bin/cat /etc/os-release
 
 ```bash
 # Inside the container, check PID namespace
-sudo zigviz exec my-first-container /bin/ps aux
+sudo zviz exec my-first-container /bin/ps aux
 # Only sees processes in this container
 
 # Check user namespace
-sudo zigviz exec my-first-container /bin/id
+sudo zviz exec my-first-container /bin/id
 # uid=0(root) gid=0(root) - but this is NOT host root!
 ```
 
@@ -145,15 +145,15 @@ sudo zigviz exec my-first-container /bin/id
 
 ```bash
 # Try to mount (should fail)
-sudo zigviz exec my-first-container /bin/mount -t proc proc /proc
+sudo zviz exec my-first-container /bin/mount -t proc proc /proc
 # mount: permission denied
 
 # Try to load a kernel module (should fail)
-sudo zigviz exec my-first-container /bin/sh -c "insmod /tmp/evil.ko"
+sudo zviz exec my-first-container /bin/sh -c "insmod /tmp/evil.ko"
 # Operation not permitted
 
 # Try to reboot (should fail)
-sudo zigviz exec my-first-container /bin/reboot
+sudo zviz exec my-first-container /bin/reboot
 # Operation not permitted
 ```
 
@@ -161,15 +161,15 @@ sudo zigviz exec my-first-container /bin/reboot
 
 ```bash
 # Rootfs is read-only by default
-sudo zigviz exec my-first-container /bin/touch /test
+sudo zviz exec my-first-container /bin/touch /test
 # touch: /test: Read-only file system
 
 # /tmp is writable
-sudo zigviz exec my-first-container /bin/sh -c "echo hello > /tmp/test && cat /tmp/test"
+sudo zviz exec my-first-container /bin/sh -c "echo hello > /tmp/test && cat /tmp/test"
 # hello
 
 # Can't access host files
-sudo zigviz exec my-first-container /bin/ls /host
+sudo zviz exec my-first-container /bin/ls /host
 # ls: /host: No such file or directory
 ```
 
@@ -177,11 +177,11 @@ sudo zigviz exec my-first-container /bin/ls /host
 
 ```bash
 # By default, network is isolated
-sudo zigviz exec my-first-container /bin/ping -c 1 8.8.8.8
+sudo zviz exec my-first-container /bin/ping -c 1 8.8.8.8
 # Network is unreachable (by default)
 
 # Local loopback works
-sudo zigviz exec my-first-container /bin/ping -c 1 127.0.0.1
+sudo zviz exec my-first-container /bin/ping -c 1 127.0.0.1
 # PING 127.0.0.1: 64 bytes from 127.0.0.1
 ```
 
@@ -191,28 +191,28 @@ View container resource usage:
 
 ```bash
 # Using cgroups
-cat /sys/fs/cgroup/zigviz/my-first-container/memory.current
-cat /sys/fs/cgroup/zigviz/my-first-container/cpu.stat
+cat /sys/fs/cgroup/zviz/my-first-container/memory.current
+cat /sys/fs/cgroup/zviz/my-first-container/cpu.stat
 
-# Using zigviz metrics
-zigviz metrics
+# Using zviz metrics
+zviz metrics
 ```
 
 ## Step 7: Stop and Delete
 
 ```bash
 # Stop the container
-sudo zigviz kill my-first-container
+sudo zviz kill my-first-container
 
 # Check state
-zigviz state my-first-container
+zviz state my-first-container
 # status: "stopped"
 
 # Delete the container
-sudo zigviz delete my-first-container
+sudo zviz delete my-first-container
 
 # Verify deletion
-zigviz list
+zviz list
 # (empty)
 ```
 
@@ -262,10 +262,10 @@ deny: /proc/sys/**, /sys/**
 cgroups limited resources:
 
 ```bash
-cat /sys/fs/cgroup/zigviz/my-first-container/memory.max
+cat /sys/fs/cgroup/zviz/my-first-container/memory.max
 # 268435456 (256MB)
 
-cat /sys/fs/cgroup/zigviz/my-first-container/pids.max
+cat /sys/fs/cgroup/zviz/my-first-container/pids.max
 # 100
 ```
 
@@ -275,8 +275,8 @@ nftables rules controlled network access:
 
 ```bash
 # Example rules
-nft list ruleset | grep zigviz
-# chain zigviz_my-first-container { type filter hook output priority 0; policy drop; }
+nft list ruleset | grep zviz
+# chain zviz_my-first-container { type filter hook output priority 0; policy drop; }
 ```
 
 ## Next Steps

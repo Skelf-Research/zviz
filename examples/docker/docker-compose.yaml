@@ -1,11 +1,11 @@
-# Docker Compose with ZigViz Runtime
+# Docker Compose with ZViz Runtime
 #
-# This example shows how to use ZigViz with Docker Compose.
-# Each service can specify the zigviz runtime for isolation.
+# This example shows how to use ZViz with Docker Compose.
+# Each service can specify the zviz runtime for isolation.
 #
 # Prerequisites:
-#   1. Install ZigViz: sudo ./deploy/install.sh
-#   2. Configure Docker: Add zigviz runtime to /etc/docker/daemon.json
+#   1. Install ZViz: sudo ./deploy/install.sh
+#   2. Configure Docker: Add zviz runtime to /etc/docker/daemon.json
 #   3. Restart Docker: sudo systemctl restart docker
 #
 # Usage:
@@ -16,18 +16,18 @@
 version: "3.8"
 
 services:
-  # Web application with ZigViz isolation
+  # Web application with ZViz isolation
   web:
     image: nginx:alpine
-    runtime: zigviz
+    runtime: zviz
     ports:
       - "8080:80"
     volumes:
       - ./html:/usr/share/nginx/html:ro
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
     labels:
-      zigviz.profile: "web-server"
-      zigviz.audit: "true"
+      zviz.profile: "web-server"
+      zviz.audit: "true"
     deploy:
       resources:
         limits:
@@ -39,10 +39,10 @@ services:
       timeout: 10s
       retries: 3
 
-  # API backend with ZigViz isolation
+  # API backend with ZViz isolation
   api:
     image: node:20-alpine
-    runtime: zigviz
+    runtime: zviz
     working_dir: /app
     command: ["node", "server.js"]
     volumes:
@@ -51,7 +51,7 @@ services:
       - NODE_ENV=production
       - PORT=3000
     labels:
-      zigviz.profile: "web-server"
+      zviz.profile: "web-server"
     deploy:
       resources:
         limits:
@@ -63,11 +63,11 @@ services:
       timeout: 10s
       retries: 3
 
-  # Database (NOT using ZigViz - databases need direct syscall access)
+  # Database (NOT using ZViz - databases need direct syscall access)
   db:
     image: postgres:15-alpine
     # Note: Databases typically need direct syscall access
-    # runtime: zigviz  # Uncomment only if you have a database profile
+    # runtime: zviz  # Uncomment only if you have a database profile
     environment:
       - POSTGRES_USER=app
       - POSTGRES_PASSWORD=secret
@@ -85,13 +85,13 @@ services:
       timeout: 10s
       retries: 5
 
-  # Redis cache with ZigViz
+  # Redis cache with ZViz
   redis:
     image: redis:7-alpine
-    runtime: zigviz
+    runtime: zviz
     command: ["redis-server", "--maxmemory", "64mb", "--maxmemory-policy", "allkeys-lru"]
     labels:
-      zigviz.profile: "minimal"
+      zviz.profile: "minimal"
     deploy:
       resources:
         limits:
@@ -106,7 +106,7 @@ services:
   # CI runner example - ephemeral build container
   ci-runner:
     image: node:20-alpine
-    runtime: zigviz
+    runtime: zviz
     working_dir: /workspace
     command: ["sh", "-c", "npm ci && npm test && npm run build"]
     volumes:
@@ -116,8 +116,8 @@ services:
       - CI=true
       - NODE_ENV=test
     labels:
-      zigviz.profile: "ci-runner"
-      zigviz.audit: "true"
+      zviz.profile: "ci-runner"
+      zviz.audit: "true"
     deploy:
       resources:
         limits:

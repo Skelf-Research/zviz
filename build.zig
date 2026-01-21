@@ -18,7 +18,7 @@ pub fn build(b: *std.Build) void {
 
     // Main executable
     const exe = b.addExecutable(.{
-        .name = "zigviz",
+        .name = "zviz",
         .root_module = root_module,
         .linkage = if (is_release) .static else null,
     });
@@ -31,7 +31,7 @@ pub fn build(b: *std.Build) void {
     if (b.args) |args| {
         run_cmd.addArgs(args);
     }
-    const run_step = b.step("run", "Run the ZigViz runtime");
+    const run_step = b.step("run", "Run the ZViz runtime");
     run_step.dependOn(&run_cmd.step);
 
     // Unit tests
@@ -94,7 +94,7 @@ pub fn build(b: *std.Build) void {
         });
 
         const cross_exe = b.addExecutable(.{
-            .name = b.fmt("zigviz-{s}-{s}", .{ @tagName(ct.arch), @tagName(ct.abi) }),
+            .name = b.fmt("zviz-{s}-{s}", .{ @tagName(ct.arch), @tagName(ct.abi) }),
             .root_module = cross_module,
             .linkage = .static,
         });
@@ -118,7 +118,7 @@ pub fn build(b: *std.Build) void {
         .link_libc = true,
     });
     const check = b.addExecutable(.{
-        .name = "zigviz",
+        .name = "zviz",
         .root_module = check_module,
     });
     const check_step = b.step("check", "Check for compile errors");

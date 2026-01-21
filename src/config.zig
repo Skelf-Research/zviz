@@ -2,7 +2,7 @@ const std = @import("std");
 const log = @import("log.zig");
 const errors = @import("errors.zig");
 
-/// ZigViz runtime configuration
+/// ZViz runtime configuration
 /// Can be loaded from a config file or environment variables
 
 pub const Config = struct {
@@ -24,10 +24,10 @@ pub const Config = struct {
 
 pub const RuntimeConfig = struct {
     /// State directory for container metadata
-    state_dir: []const u8 = "/run/zigviz",
+    state_dir: []const u8 = "/run/zviz",
 
     /// Root directory for container rootfs
-    root_dir: []const u8 = "/var/lib/zigviz",
+    root_dir: []const u8 = "/var/lib/zviz",
 
     /// Default profile to use if none specified
     default_profile: []const u8 = "ci-runner",
@@ -132,12 +132,12 @@ pub const SecurityConfig = struct {
 
 /// Configuration file locations (in order of priority)
 const CONFIG_PATHS = [_][]const u8{
-    "/etc/zigviz/config.json",
-    "/etc/zigviz.json",
+    "/etc/zviz/config.json",
+    "/etc/zviz.json",
 };
 
 /// Environment variable prefix
-const ENV_PREFIX = "ZIGVIZ_";
+const ENV_PREFIX = "ZVIZ_";
 
 /// Load configuration from file and environment
 pub fn load(allocator: std.mem.Allocator) !Config {
@@ -227,44 +227,44 @@ fn extractJsonString(content: []const u8, key: []const u8) ?[]const u8 {
 fn loadFromEnv(config: Config) Config {
     var result = config;
 
-    // ZIGVIZ_STATE_DIR
-    if (std.posix.getenv("ZIGVIZ_STATE_DIR")) |val| {
+    // ZVIZ_STATE_DIR
+    if (std.posix.getenv("ZVIZ_STATE_DIR")) |val| {
         result.runtime.state_dir = val;
     }
 
-    // ZIGVIZ_LOG_LEVEL
-    if (std.posix.getenv("ZIGVIZ_LOG_LEVEL")) |val| {
+    // ZVIZ_LOG_LEVEL
+    if (std.posix.getenv("ZVIZ_LOG_LEVEL")) |val| {
         if (LoggingConfig.LogLevel.fromString(val)) |level| {
             result.logging.level = level;
         }
     }
 
-    // ZIGVIZ_LOG_FORMAT
-    if (std.posix.getenv("ZIGVIZ_LOG_FORMAT")) |val| {
+    // ZVIZ_LOG_FORMAT
+    if (std.posix.getenv("ZVIZ_LOG_FORMAT")) |val| {
         if (LoggingConfig.LogFormat.fromString(val)) |fmt| {
             result.logging.format = fmt;
         }
     }
 
-    // ZIGVIZ_ROOTLESS
-    if (std.posix.getenv("ZIGVIZ_ROOTLESS")) |val| {
+    // ZVIZ_ROOTLESS
+    if (std.posix.getenv("ZVIZ_ROOTLESS")) |val| {
         result.runtime.rootless = std.mem.eql(u8, val, "true") or std.mem.eql(u8, val, "1");
     }
 
-    // ZIGVIZ_BROKER_TIMEOUT
-    if (std.posix.getenv("ZIGVIZ_BROKER_TIMEOUT")) |val| {
+    // ZVIZ_BROKER_TIMEOUT
+    if (std.posix.getenv("ZVIZ_BROKER_TIMEOUT")) |val| {
         if (std.fmt.parseInt(u32, val, 10)) |timeout| {
             result.broker.timeout_ms = timeout;
         } else |_| {}
     }
 
-    // ZIGVIZ_MEMORY_MAX
-    if (std.posix.getenv("ZIGVIZ_MEMORY_MAX")) |val| {
+    // ZVIZ_MEMORY_MAX
+    if (std.posix.getenv("ZVIZ_MEMORY_MAX")) |val| {
         result.resources.memory_max = val;
     }
 
-    // ZIGVIZ_PIDS_MAX
-    if (std.posix.getenv("ZIGVIZ_PIDS_MAX")) |val| {
+    // ZVIZ_PIDS_MAX
+    if (std.posix.getenv("ZVIZ_PIDS_MAX")) |val| {
         if (std.fmt.parseInt(u32, val, 10)) |pids| {
             result.resources.pids_max = pids;
         } else |_| {}
@@ -278,7 +278,7 @@ fn mergeConfig(base: Config, overlay: Config) Config {
     var result = base;
 
     // Merge runtime
-    if (!std.mem.eql(u8, overlay.runtime.state_dir, "/run/zigviz")) {
+    if (!std.mem.eql(u8, overlay.runtime.state_dir, "/run/zviz")) {
         result.runtime.state_dir = overlay.runtime.state_dir;
     }
     if (overlay.runtime.rootless) {
@@ -301,8 +301,8 @@ pub fn generateDefault() []const u8 {
     return
         \\{
         \\  "runtime": {
-        \\    "state_dir": "/run/zigviz",
-        \\    "root_dir": "/var/lib/zigviz",
+        \\    "state_dir": "/run/zviz",
+        \\    "root_dir": "/var/lib/zviz",
         \\    "default_profile": "ci-runner",
         \\    "rootless": false,
         \\    "operation_timeout_ms": 30000
@@ -340,7 +340,7 @@ pub fn generateDefault() []const u8 {
 
 test "default config" {
     const config = Config{};
-    try std.testing.expectEqualStrings("/run/zigviz", config.runtime.state_dir);
+    try std.testing.expectEqualStrings("/run/zviz", config.runtime.state_dir);
     try std.testing.expect(!config.runtime.rootless);
     try std.testing.expectEqual(LoggingConfig.LogLevel.info, config.logging.level);
 }

@@ -1,0 +1,10 @@
+zviz (0.1.0-1) stable; urgency=medium
+
+  * Initial release
+  * Five-layer security enforcement (namespaces, seccomp, LSM, cgroups, network)
+  * Kubernetes RuntimeClass support
+  * Built-in security profiles (ci-runner, web-server, minimal)
+  * containerd integration
+  * Near-native performance (<5% overhead)
+
+ -- Skelf Research <team@skelf.io>  Tue, 21 Jan 2026 00:00:00 +0000

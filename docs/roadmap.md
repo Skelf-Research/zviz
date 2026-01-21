@@ -1,6 +1,6 @@
-# ZigViz Implementation Roadmap
+# ZViz Implementation Roadmap
 
-This document defines the implementation roadmap for ZigViz, translating the design documents into actionable phases with clear success criteria.
+This document defines the implementation roadmap for ZViz, translating the design documents into actionable phases with clear success criteria.
 
 ## Overview
 
@@ -136,7 +136,7 @@ The roadmap is organized into six phases, progressing from foundational infrastr
 
 #### Tasks
 
-- [ ] AppArmor profile generation from ZigViz profile
+- [ ] AppArmor profile generation from ZViz profile
 - [ ] SELinux policy module generation (alternative)
 - [ ] Landlock ruleset setup (unprivileged fallback)
 - [ ] LSM profile loading and enforcement
@@ -235,7 +235,7 @@ The roadmap is organized into six phases, progressing from foundational infrastr
 
 - `src/compiler/` — policy compiler module
 - `src/schema/` — YAML parser and validator
-- `zigviz compile` CLI command
+- `zviz compile` CLI command
 - Generated artifacts: `.bpf`, `.apparmor`, `.nft`, `.broker`
 - Manifest format documentation
 
@@ -243,7 +243,7 @@ The roadmap is organized into six phases, progressing from foundational infrastr
 
 ## Phase 4: Integration
 
-**Goal**: Integrate ZigViz with containerd and Kubernetes as described in `docs/deployment.md`.
+**Goal**: Integrate ZViz with containerd and Kubernetes as described in `docs/deployment.md`.
 
 ### Tasks
 
@@ -264,17 +264,17 @@ The roadmap is organized into six phases, progressing from foundational infrastr
 
 ### Success Criteria
 
-- [ ] `zigviz create/start/kill/delete` works as OCI runtime
-- [ ] containerd can spawn containers with ZigViz runtime
-- [ ] Kubernetes pods with `runtimeClassName: zigviz` run correctly
-- [ ] `kubectl exec` into ZigViz container works
+- [ ] `zviz create/start/kill/delete` works as OCI runtime
+- [ ] containerd can spawn containers with ZViz runtime
+- [ ] Kubernetes pods with `runtimeClassName: zviz` run correctly
+- [ ] `kubectl exec` into ZViz container works
 - [ ] Container logs are accessible via containerd
 - [ ] Metrics endpoint exposes broker latency and denial counts
 - [ ] Profile selection works via pod annotation
 
 ### Deliverables
 
-- `zigviz` binary with OCI runtime commands
+- `zviz` binary with OCI runtime commands
 - containerd configuration examples
 - Kubernetes RuntimeClass and Pod manifests
 - Metrics documentation
@@ -332,7 +332,7 @@ The roadmap is organized into six phases, progressing from foundational infrastr
 #### Tasks
 
 - [ ] Define policy outcome test cases
-- [ ] Run same workload on gVisor and ZigViz
+- [ ] Run same workload on gVisor and ZViz
 - [ ] Compare syscall allow/deny decisions
 - [ ] Compare file access outcomes
 - [ ] Compare network policy outcomes
@@ -356,7 +356,7 @@ The roadmap is organized into six phases, progressing from foundational infrastr
 
 ## Phase 6: Production Readiness
 
-**Goal**: Prepare ZigViz for production deployment with documentation, packaging, and release process.
+**Goal**: Prepare ZViz for production deployment with documentation, packaging, and release process.
 
 ### Tasks
 
@@ -375,7 +375,7 @@ The roadmap is organized into six phases, progressing from foundational infrastr
 
 ### Success Criteria
 
-- [ ] New user can install and run ZigViz in < 30 minutes
+- [ ] New user can install and run ZViz in < 30 minutes
 - [ ] All documentation reviewed and tested
 - [ ] Release binaries are signed and reproducible
 - [ ] SECURITY.md with disclosure process exists

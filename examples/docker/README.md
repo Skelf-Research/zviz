@@ -1,10 +1,10 @@
-# Docker Examples for ZigViz
+# Docker Examples for ZViz
 
-This directory contains examples for using ZigViz with Docker.
+This directory contains examples for using ZViz with Docker.
 
 ## Prerequisites
 
-1. **Install ZigViz**:
+1. **Install ZViz**:
    ```bash
    sudo ../deploy/install.sh
    ```
@@ -14,8 +14,8 @@ This directory contains examples for using ZigViz with Docker.
    ```json
    {
      "runtimes": {
-       "zigviz": {
-         "path": "/usr/local/bin/zigviz"
+       "zviz": {
+         "path": "/usr/local/bin/zviz"
        }
      }
    }
@@ -28,15 +28,15 @@ This directory contains examples for using ZigViz with Docker.
 
 4. **Verify Installation**:
    ```bash
-   docker run --runtime=zigviz alpine echo "ZigViz works!"
+   docker run --runtime=zviz alpine echo "ZViz works!"
    ```
 
 ## Files
 
 | File | Description |
 |------|-------------|
-| `docker-compose.yaml` | Multi-service example with ZigViz |
-| `Dockerfile.secure` | Best practices Dockerfile for ZigViz |
+| `docker-compose.yaml` | Multi-service example with ZViz |
+| `Dockerfile.secure` | Best practices Dockerfile for ZViz |
 | `README.md` | This file |
 
 ## Quick Start
@@ -44,13 +44,13 @@ This directory contains examples for using ZigViz with Docker.
 ### Single Container
 
 ```bash
-# Run with ZigViz runtime
-docker run --runtime=zigviz alpine sh -c "echo Hello from ZigViz"
+# Run with ZViz runtime
+docker run --runtime=zviz alpine sh -c "echo Hello from ZViz"
 
 # Run with security profile
-docker run --runtime=zigviz \
-  --label zigviz.profile=ci-runner \
-  --label zigviz.audit=true \
+docker run --runtime=zviz \
+  --label zviz.profile=ci-runner \
+  --label zviz.audit=true \
   node:20-alpine npm test
 ```
 
@@ -72,22 +72,22 @@ docker-compose down
 
 ## Security Labels
 
-You can configure ZigViz behavior using Docker labels:
+You can configure ZViz behavior using Docker labels:
 
 | Label | Description | Default |
 |-------|-------------|---------|
-| `zigviz.profile` | Security profile name | `default` |
-| `zigviz.audit` | Enable audit logging | `false` |
-| `zigviz.broker-timeout` | Broker timeout (ms) | `1000` |
-| `zigviz.strict-mode` | Fail on unknown syscalls | `false` |
+| `zviz.profile` | Security profile name | `default` |
+| `zviz.audit` | Enable audit logging | `false` |
+| `zviz.broker-timeout` | Broker timeout (ms) | `1000` |
+| `zviz.strict-mode` | Fail on unknown syscalls | `false` |
 
 ### Example
 
 ```bash
-docker run --runtime=zigviz \
-  --label zigviz.profile=hostile-tenant \
-  --label zigviz.audit=true \
-  --label zigviz.strict-mode=true \
+docker run --runtime=zviz \
+  --label zviz.profile=hostile-tenant \
+  --label zviz.audit=true \
+  --label zviz.strict-mode=true \
   untrusted-image
 ```
 
@@ -99,8 +99,8 @@ Use `Dockerfile.secure` as a template for building secure images:
 # Build secure image
 docker build -f Dockerfile.secure -t myapp:secure .
 
-# Run with ZigViz
-docker run --runtime=zigviz myapp:secure
+# Run with ZViz
+docker run --runtime=zviz myapp:secure
 ```
 
 ### Best Practices
@@ -119,8 +119,8 @@ docker run --runtime=zigviz myapp:secure
 # Check Docker configuration
 cat /etc/docker/daemon.json
 
-# Verify zigviz binary
-ls -la /usr/local/bin/zigviz
+# Verify zviz binary
+ls -la /usr/local/bin/zviz
 
 # Restart Docker
 sudo systemctl restart docker
@@ -129,20 +129,20 @@ sudo systemctl restart docker
 ### "Permission denied"
 
 ```bash
-# Check ZigViz permissions
-sudo zigviz validate
+# Check ZViz permissions
+sudo zviz validate
 
 # Run with verbose logging
-docker run --runtime=zigviz \
-  --label zigviz.audit=true \
+docker run --runtime=zviz \
+  --label zviz.audit=true \
   alpine sh
 ```
 
 ### View Audit Logs
 
 ```bash
-# Check ZigViz logs
-cat /var/log/zigviz/*.log
+# Check ZViz logs
+cat /var/log/zviz/*.log
 
 # Docker logs
 docker logs <container-id>

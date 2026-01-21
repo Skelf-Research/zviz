@@ -5,8 +5,8 @@
 # file system writes and dangerous syscalls.
 #
 # Usage:
-#   zigviz compile profiles/web-server.yaml
-#   # Then use via annotation: zigviz.io/profile: "web-server"
+#   zviz compile profiles/web-server.yaml
+#   # Then use via annotation: zviz.io/profile: "web-server"
 
 name: web-server
 version: "1.0"
@@ -269,7 +269,7 @@ capabilities:
 audit:
   log_blocked: true
   log_mediated: false
-  log_path: /var/log/zigviz/web-server.log
+  log_path: /var/log/zviz/web-server.log
 
   # Rate limit logging to prevent log flooding from attacks
   rate_limit:

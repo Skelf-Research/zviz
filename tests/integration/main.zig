@@ -1,10 +1,10 @@
 const std = @import("std");
 
 // Import the main library for testing
-const zigviz = @import("../../src/main.zig");
+const zviz = @import("../../src/main.zig");
 
 pub fn main() !void {
-    std.debug.print("ZigViz Integration Test Suite\n", .{});
+    std.debug.print("ZViz Integration Test Suite\n", .{});
     std.debug.print("==============================\n\n", .{});
 
     var passed: u32 = 0;
@@ -67,7 +67,7 @@ fn testSeccompFilter() !void {
 /// Test that cgroup limits are enforced
 fn testCgroupLimits() !void {
     // Check if cgroups v2 is available
-    if (!zigviz.cgroup.checkCgroupsV2()) {
+    if (!zviz.cgroup.checkCgroupsV2()) {
         std.debug.print("(skipped - cgroups v2 not available) ", .{});
         return;
     }

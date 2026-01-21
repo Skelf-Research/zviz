@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Common issues and solutions when using ZigViz.
+Common issues and solutions when using ZViz.
 
 ## Container Won't Start
 
@@ -15,7 +15,7 @@ Error: PermissionDenied
 
 1. Run as root:
    ```bash
-   sudo zigviz run ...
+   sudo zviz run ...
    ```
 
 2. Check user namespaces are enabled:
@@ -26,7 +26,7 @@ Error: PermissionDenied
 
 3. Check seccomp is available:
    ```bash
-   zigviz validate
+   zviz validate
    ```
 
 ### Missing Rootfs
@@ -50,12 +50,12 @@ ls my-bundle/
 
 **Enable audit mode:**
 ```bash
-sudo zigviz run --audit my-container . /bin/my-app
+sudo zviz run --audit my-container . /bin/my-app
 ```
 
 **Check audit log:**
 ```bash
-jq '.[] | select(.decision == "denied")' /var/log/zigviz/audit.json
+jq '.[] | select(.decision == "denied")' /var/log/zviz/audit.json
 ```
 
 ### Adding Syscall Permissions
@@ -99,7 +99,7 @@ network:
 
 **Check broker metrics:**
 ```bash
-zigviz metrics | grep latency
+zviz metrics | grep latency
 ```
 
 **Reduce brokered syscalls:**
@@ -113,18 +113,18 @@ syscalls:
 
 **Check container limits:**
 ```bash
-cat /sys/fs/cgroup/zigviz/*/memory.current
+cat /sys/fs/cgroup/zviz/*/memory.current
 ```
 
 ## Debug Mode
 
 **Enable verbose logging:**
 ```bash
-sudo zigviz --log-level debug run my-container . /bin/sh
+sudo zviz --log-level debug run my-container . /bin/sh
 ```
 
 ## Getting Help
 
-- Check [GitHub Issues](https://github.com/zigviz/zigviz/issues)
+- Check [GitHub Issues](https://github.com/zviz/zviz/issues)
 - Review [Architecture docs](../architecture/index.md)
-- Email: support@zigviz.io
+- Email: support@zviz.io

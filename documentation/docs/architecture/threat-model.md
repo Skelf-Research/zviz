@@ -1,11 +1,11 @@
 # Threat Model
 
-ZigViz's security model and what it protects against.
+ZViz's security model and what it protects against.
 
 ## Trust Boundaries
 
 - **Untrusted**: Container workloads
-- **Trusted**: ZigViz broker, Host kernel
+- **Trusted**: ZViz broker, Host kernel
 
 ## In Scope
 

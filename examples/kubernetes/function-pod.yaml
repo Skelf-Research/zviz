@@ -1,7 +1,7 @@
-# Serverless Function Pod with ZigViz
+# Serverless Function Pod with ZViz
 #
 # This example shows how to run serverless functions with
-# maximum isolation using ZigViz. The minimal profile ensures
+# maximum isolation using ZViz. The minimal profile ensures
 # functions can only perform basic computation.
 #
 # Usage:
@@ -18,13 +18,13 @@ metadata:
     function: hello-world
   annotations:
     # Use minimal profile for maximum security
-    zigviz.io/profile: "minimal"
-    zigviz.io/audit: "true"
-    zigviz.io/strict-mode: "true"
+    zviz.io/profile: "minimal"
+    zviz.io/audit: "true"
+    zviz.io/strict-mode: "true"
     # Timeout for function execution
-    zigviz.io/timeout: "30000"
+    zviz.io/timeout: "30000"
 spec:
-  runtimeClassName: zigviz
+  runtimeClassName: zviz
 
   # Don't restart - functions are one-shot
   restartPolicy: Never
@@ -99,10 +99,10 @@ spec:
   template:
     metadata:
       annotations:
-        zigviz.io/profile: "minimal"
-        zigviz.io/strict-mode: "true"
+        zviz.io/profile: "minimal"
+        zviz.io/strict-mode: "true"
     spec:
-      runtimeClassName: zigviz
+      runtimeClassName: zviz
       restartPolicy: Never
 
       containers:
@@ -162,9 +162,9 @@ spec:
       template:
         metadata:
           annotations:
-            zigviz.io/profile: "minimal"
+            zviz.io/profile: "minimal"
         spec:
-          runtimeClassName: zigviz
+          runtimeClassName: zviz
           restartPolicy: Never
 
           containers:

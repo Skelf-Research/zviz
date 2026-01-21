@@ -1,0 +1,28 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    configure)
+        # Create state directory
+        mkdir -p /run/zviz
+
+        # Print post-install message
+        echo ""
+        echo "========================================"
+        echo "  ZViz installed successfully!"
+        echo "========================================"
+        echo ""
+        echo "Next steps:"
+        echo "  1. Verify installation:  zviz version"
+        echo "  2. Check system:         zviz validate"
+        echo ""
+        echo "For Kubernetes integration:"
+        echo "  kubectl apply -f /usr/share/zviz/runtime-class.yaml"
+        echo ""
+        echo "Documentation: https://github.com/Skelf-Research/zviz"
+        echo ""
+        ;;
+esac
+
+#DEBHELPER#
+exit 0

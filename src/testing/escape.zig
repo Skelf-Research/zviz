@@ -3,7 +3,7 @@ const log = @import("../log.zig");
 
 /// Escape-class test suite
 /// These tests attempt to break out of the container sandbox.
-/// All escape attempts should FAIL (be blocked by ZigViz).
+/// All escape attempts should FAIL (be blocked by ZViz).
 
 // ============================================================================
 // Test Result Types
