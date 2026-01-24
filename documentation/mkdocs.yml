@@ -118,6 +118,7 @@ nav:
     - Overview: architecture/index.md
     - Enforcement Model: architecture/enforcement-model.md
     - Broker Design: architecture/broker-design.md
+    - Comparison: architecture/comparison.md
     - Threat Model: architecture/threat-model.md
     - Performance: architecture/performance.md
   - Security:

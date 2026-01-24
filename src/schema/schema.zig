@@ -565,6 +565,152 @@ pub const BaseProfiles = struct {
     }
 };
 
+/// Default container profile with comprehensive syscall allow list.
+/// Covers syscalls needed for typical container workloads (static and dynamic binaries).
+pub fn defaultContainer() Profile {
+    return .{
+        .name = "zviz-container",
+        .version = "0.1",
+        .mode = .high_density,
+        .description = "Default container profile with comprehensive syscall filtering",
+        .syscalls = .{
+            .allow = &container_allow_list,
+            .deny = &container_deny_list,
+            .broker = &.{},
+        },
+    };
+}
+
+/// Comprehensive allow list for container workloads
+const container_allow_list: [90]i32 = .{
+    // File I/O
+    0, // read
+    1, // write
+    2, // open
+    3, // close
+    4, // stat
+    5, // fstat
+    6, // lstat
+    7, // poll
+    8, // lseek
+    17, // pread64
+    18, // pwrite64
+    19, // readv
+    20, // writev
+    21, // access
+    72, // fcntl
+    77, // ftruncate
+    78, // getdents
+    79, // getcwd
+    80, // chdir
+    82, // rename
+    83, // mkdir
+    84, // rmdir
+    87, // unlink
+    89, // readlink
+    217, // getdents64
+    257, // openat
+    262, // newfstatat
+    263, // unlinkat
+    267, // readlinkat
+    // Memory management
+    9, // mmap
+    10, // mprotect
+    11, // munmap
+    12, // brk
+    25, // mremap
+    28, // madvise
+    // Process
+    39, // getpid
+    57, // fork (limited by namespaces)
+    59, // execve
+    60, // exit
+    61, // wait4
+    62, // kill (within container)
+    102, // getuid
+    104, // getgid
+    107, // geteuid
+    108, // getegid
+    110, // getppid
+    111, // getpgrp
+    112, // setsid
+    158, // arch_prctl
+    186, // gettid
+    200, // tkill
+    218, // set_tid_address
+    231, // exit_group
+    247, // waitid
+    273, // set_robust_list
+    // Signals
+    13, // rt_sigaction
+    14, // rt_sigprocmask
+    15, // rt_sigreturn
+    127, // rt_sigpending
+    128, // rt_sigtimedwait
+    131, // sigaltstack
+    // Pipes and IPC
+    22, // pipe
+    293, // pipe2
+    16, // ioctl
+    32, // dup
+    33, // dup2
+    292, // dup3
+    // Synchronization
+    202, // futex
+    // Time
+    35, // nanosleep
+    96, // gettimeofday
+    228, // clock_gettime
+    229, // clock_getres
+    230, // clock_nanosleep
+    // Network (basic - socket filtered by domain in BPF)
+    42, // connect
+    43, // accept
+    44, // sendto
+    45, // recvfrom
+    46, // sendmsg
+    47, // recvmsg
+    49, // bind
+    50, // listen
+    53, // socketpair
+    // Misc
+    63, // uname
+    99, // sysinfo
+    302, // prlimit64
+    318, // getrandom
+    334, // rseq
+    // epoll
+    232, // epoll_wait (older kernels)
+    233, // epoll_ctl
+    291, // epoll_create1 (preferred)
+};
+
+/// Syscalls denied in containers (dangerous/privilege-escalation)
+const container_deny_list: [22]i32 = .{
+    101, // ptrace
+    165, // mount
+    166, // umount2
+    155, // pivot_root
+    175, // init_module
+    176, // delete_module
+    313, // finit_module
+    169, // reboot
+    246, // kexec_load
+    298, // perf_event_open
+    321, // bpf
+    323, // userfaultfd
+    167, // swapon
+    168, // swapoff
+    163, // acct
+    179, // quotactl
+    171, // setdomainname
+    170, // sethostname
+    172, // iopl
+    173, // ioperm
+    248, // add_key
+    249, // request_key
+};
+
 test "default profile validation" {
     const profile = Profile{
         .name = "test",

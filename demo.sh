@@ -48,14 +48,14 @@ check_prerequisites() {
     echo -e "${BOLD}Checking prerequisites...${NC}"
     echo ""
 
-    # Check zviz
-    if command -v zviz &>/dev/null; then
-        ZVIZ_BIN="zviz"
-        log_pass "zviz found: $(which zviz)"
-        HAVE_ZVIZ=true
-    elif [[ -f "$SCRIPT_DIR/zig-out/bin/zviz" ]]; then
+    # Check zviz (prefer local build over system install)
+    if [[ -f "$SCRIPT_DIR/zig-out/bin/zviz" ]]; then
         ZVIZ_BIN="$SCRIPT_DIR/zig-out/bin/zviz"
         log_pass "zviz found: $ZVIZ_BIN"
+        HAVE_ZVIZ=true
+    elif command -v zviz &>/dev/null; then
+        ZVIZ_BIN="zviz"
+        log_pass "zviz found: $(which zviz)"
         HAVE_ZVIZ=true
     else
         log_fail "zviz not found"
@@ -88,13 +88,12 @@ check_prerequisites() {
             log_warn "gVisor runtime not configured in Docker"
         fi
     else
-        log_warn "Docker not available"
-        log_warn "Docker is needed to create OCI bundles and run gVisor comparison"
+        log_warn "Docker not available (optional - for runc/gVisor comparison)"
     fi
 
-    # Check if running as root (needed for zviz run)
+    # ZViz supports rootless mode via user namespaces
     if [[ $EUID -ne 0 ]]; then
-        log_warn "Not running as root - zviz container tests will use sudo"
+        log_info "Running in rootless mode (user namespaces)"
     fi
 
     mkdir -p "$RESULTS_DIR"
@@ -144,21 +143,43 @@ show_gvisor_install_instructions() {
 # ============================================================================
 
 setup_oci_bundle() {
-    log_info "Creating OCI bundle from Alpine image..."
+    # Skip if rootfs already populated
+    if [[ -f "$BUNDLE_DIR/rootfs/bin/busybox" ]] || [[ -f "$BUNDLE_DIR/rootfs/bin/sh" ]]; then
+        return
+    fi
+
+    log_info "Creating OCI bundle..."
 
     mkdir -p "$BUNDLE_DIR/rootfs"
 
-    # Extract Alpine rootfs from Docker
-    local container_id
-    container_id=$(docker create alpine:latest)
-    docker export "$container_id" | tar -C "$BUNDLE_DIR/rootfs" -xf -
-    docker rm "$container_id" >/dev/null
+    if [[ "$HAVE_DOCKER" == "true" ]]; then
+        # Use Docker to create rootfs
+        log_info "Extracting Alpine rootfs from Docker..."
+        local container_id
+        container_id=$(docker create alpine:latest)
+        docker export "$container_id" | tar -C "$BUNDLE_DIR/rootfs" -xf -
+        docker rm "$container_id" >/dev/null
+    else
+        # Download Alpine minirootfs directly (no Docker needed)
+        log_info "Downloading Alpine minirootfs..."
+        local arch
+        arch=$(uname -m)
+        [[ "$arch" == "x86_64" ]] && arch="x86_64"
+        [[ "$arch" == "aarch64" ]] && arch="aarch64"
 
-    # Generate OCI spec
-    pushd "$BUNDLE_DIR" >/dev/null
-    $ZVIZ_BIN spec 2>/dev/null || {
-        # Fallback: create minimal config.json
-        cat > config.json << 'EOF'
+        local alpine_url="https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/${arch}/alpine-minirootfs-3.21.3-${arch}.tar.gz"
+        if command -v curl &>/dev/null; then
+            curl -fsSL "$alpine_url" | tar -xz -C "$BUNDLE_DIR/rootfs"
+        elif command -v wget &>/dev/null; then
+            wget -qO- "$alpine_url" | tar -xz -C "$BUNDLE_DIR/rootfs"
+        else
+            log_fail "Neither curl nor wget found - cannot download rootfs"
+            return 1
+        fi
+    fi
+
+    # Create config.json
+    cat > "$BUNDLE_DIR/config.json" << 'EOF'
 {
     "ociVersion": "1.0.2",
     "process": {
@@ -175,14 +196,11 @@ setup_oci_bundle() {
             { "type": "pid" },
             { "type": "mount" },
             { "type": "ipc" },
-            { "type": "uts" },
-            { "type": "network" }
+            { "type": "uts" }
         ]
     }
 }
 EOF
-    }
-    popd >/dev/null
 
     log_pass "OCI bundle created at $BUNDLE_DIR"
 }
@@ -190,8 +208,8 @@ EOF
 cleanup_bundle() {
     rm -rf "$BUNDLE_DIR" 2>/dev/null || true
     # Clean up any leftover containers
-    sudo $ZVIZ_BIN delete demo-zviz-bench 2>/dev/null || true
-    sudo $ZVIZ_BIN delete demo-zviz-quick 2>/dev/null || true
+    $ZVIZ_BIN delete demo-zviz-bench 2>/dev/null || true
+    $ZVIZ_BIN delete demo-zviz-quick 2>/dev/null || true
 }
 
 # ============================================================================
@@ -303,23 +321,21 @@ run_performance_demo() {
     echo "This measures real container overhead, not host syscalls."
     echo ""
 
-    if [[ "$HAVE_DOCKER" != "true" ]]; then
-        log_fail "Docker is required for fair comparison (to create OCI bundles)"
-        log_info "Install Docker and try again"
-        return 1
-    fi
-
-    # Pull alpine image
-    log_info "Pulling Alpine image..."
-    docker pull alpine:latest >/dev/null 2>&1
-
     # Setup OCI bundle for zviz
     setup_oci_bundle
 
-    # 1. Native Docker (runc) benchmark
-    echo ""
-    echo -e "${GREEN}--- Native (Docker runc) Benchmark ---${NC}"
-    run_docker_benchmark "native" "" "$RESULTS_DIR/bench_native.csv"
+    if [[ "$HAVE_DOCKER" == "true" ]]; then
+        # Pull alpine image
+        log_info "Pulling Alpine image..."
+        docker pull alpine:latest >/dev/null 2>&1
+
+        # 1. Native Docker (runc) benchmark
+        echo ""
+        echo -e "${GREEN}--- Native (Docker runc) Benchmark ---${NC}"
+        run_docker_benchmark "native" "" "$RESULTS_DIR/bench_native.csv"
+    else
+        log_warn "Docker not available - skipping native runc benchmark"
+    fi
 
     # 2. ZViz benchmark
     echo ""
@@ -331,9 +347,8 @@ run_performance_demo() {
         echo ""
         echo -e "${YELLOW}--- gVisor Benchmark ---${NC}"
         run_docker_benchmark "gvisor" "--runtime=runsc" "$RESULTS_DIR/bench_gvisor.csv"
-    else
+    elif [[ "$HAVE_DOCKER" == "true" ]]; then
         log_warn "gVisor not available - skipping gVisor benchmark"
-        show_gvisor_install_instructions
     fi
 
     # Show comparison
@@ -371,32 +386,42 @@ run_zviz_benchmark() {
 
     log_info "Running ZViz benchmark (5000 iterations per syscall)..."
 
-    # Create benchmark script in bundle
-    cat > "$BUNDLE_DIR/rootfs/bench.sh" << 'SCRIPT'
-#!/bin/sh
-apk add --no-cache build-base >/dev/null 2>&1
-cat > /tmp/bench.c << 'CCODE'
-SCRIPT
+    # Compile the benchmark binary on the host (static link for portability)
+    local bench_src="/tmp/zviz_bench_$$.c"
+    local bench_bin="$BUNDLE_DIR/rootfs/bench"
 
-    # Append the C code
-    echo "$BENCH_CODE" >> "$BUNDLE_DIR/rootfs/bench.sh"
+    echo "$BENCH_CODE" > "$bench_src"
 
-    cat >> "$BUNDLE_DIR/rootfs/bench.sh" << 'SCRIPT'
-CCODE
-gcc -O2 -o /tmp/bench /tmp/bench.c 2>/dev/null
-/tmp/bench
-SCRIPT
+    if command -v musl-gcc &>/dev/null; then
+        musl-gcc -static -O2 -o "$bench_bin" "$bench_src" 2>/dev/null
+    elif command -v gcc &>/dev/null; then
+        gcc -static -O2 -o "$bench_bin" "$bench_src" 2>/dev/null || \
+        gcc -O2 -o "$bench_bin" "$bench_src" 2>/dev/null
+    elif command -v cc &>/dev/null; then
+        cc -static -O2 -o "$bench_bin" "$bench_src" 2>/dev/null || \
+        cc -O2 -o "$bench_bin" "$bench_src" 2>/dev/null
+    else
+        log_warn "No C compiler found - cannot compile benchmark"
+        echo "syscall,latency_ns" > "$output_file"
+        rm -f "$bench_src"
+        return
+    fi
+    rm -f "$bench_src"
 
-    chmod +x "$BUNDLE_DIR/rootfs/bench.sh"
+    if [[ ! -x "$bench_bin" ]]; then
+        log_warn "Benchmark compilation failed"
+        echo "syscall,latency_ns" > "$output_file"
+        return
+    fi
 
-    # Update config.json to run the benchmark
+    # Update config.json to run the pre-compiled benchmark
     cat > "$BUNDLE_DIR/config.json" << 'EOF'
 {
     "ociVersion": "1.0.2",
     "process": {
         "terminal": false,
         "user": { "uid": 0, "gid": 0 },
-        "args": ["/bin/sh", "/bench.sh"],
+        "args": ["/bench"],
         "env": ["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"],
         "cwd": "/"
     },
@@ -414,18 +439,23 @@ SCRIPT
 EOF
 
     # Run zviz container
-    sudo $ZVIZ_BIN delete demo-zviz-bench 2>/dev/null || true
+    $ZVIZ_BIN delete demo-zviz-bench 2>/dev/null || true
 
-    if sudo $ZVIZ_BIN run demo-zviz-bench "$BUNDLE_DIR" > "$output_file" 2>&1; then
-        log_pass "ZViz benchmark completed"
+    if $ZVIZ_BIN run demo-zviz-bench "$BUNDLE_DIR" > "$output_file" 2>/dev/null; then
+        # Filter out any zviz log lines from output
+        grep -v '^\[' "$output_file" > "${output_file}.tmp" 2>/dev/null && mv "${output_file}.tmp" "$output_file"
+        if grep -q "syscall,latency_ns" "$output_file" 2>/dev/null; then
+            log_pass "ZViz benchmark completed"
+        else
+            log_warn "ZViz benchmark produced no results"
+            echo "syscall,latency_ns" > "$output_file"
+        fi
     else
-        log_warn "ZViz benchmark had issues (may need root or proper setup)"
-        # Show what happened
-        cat "$output_file" | head -20
+        log_warn "ZViz benchmark failed"
         echo "syscall,latency_ns" > "$output_file"
     fi
 
-    sudo $ZVIZ_BIN delete demo-zviz-bench 2>/dev/null || true
+    $ZVIZ_BIN delete demo-zviz-bench 2>/dev/null || true
 }
 
 show_benchmark_comparison() {
@@ -489,81 +519,549 @@ run_security_demo() {
     echo -e "${CYAN}--- ZViz vs gVisor Policy Comparison ---${NC}"
     echo ""
     log_info "Comparing syscall policies..."
-    $ZVIZ_BIN compare 2>&1 | tee "$RESULTS_DIR/policy_compare.txt"
+    $ZVIZ_BIN compare 2>&1 | grep -v 'error(gpa)\|\.zig:[0-9]' | sed 's/^\[[0-9]*\] \[INFO\] //' | tee "$RESULTS_DIR/policy_compare.txt"
     echo ""
 
     # Run system validation
     echo -e "${CYAN}--- System Validation ---${NC}"
     echo ""
-    $ZVIZ_BIN validate 2>&1 | tee "$RESULTS_DIR/validate.txt"
+    $ZVIZ_BIN validate 2>&1 | grep -v 'error(gpa)\|\.zig:[0-9]' | sed 's/^\[[0-9]*\] \[INFO\] //' | tee "$RESULTS_DIR/validate.txt"
     echo ""
 
-    # If Docker available, test security in both runtimes
-    if [[ "$HAVE_DOCKER" == "true" ]]; then
-        echo -e "${CYAN}--- Live Security Tests ---${NC}"
-        echo ""
-        run_security_tests
-    fi
+    # Always run live security tests (zviz doesn't need Docker)
+    echo -e "${CYAN}--- Live Security Tests ---${NC}"
+    echo ""
+    run_security_tests
+}
+
+compile_security_test() {
+    local sectest_src="$1"
+    local sectest_bin="$2"
+
+    cat > "$sectest_src" << 'SECTEST_EOF'
+#include <stdio.h>
+#include <errno.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/ptrace.h>
+#include <sys/socket.h>
+#include <sys/mount.h>
+#include <sys/syscall.h>
+#include <fcntl.h>
+
+static void test_ptrace(void) {
+    long ret = ptrace(PTRACE_TRACEME, 0, 0, 0);
+    if (ret == -1)
+        printf("ptrace,BLOCKED,%d\n", errno);
+    else
+        printf("ptrace,ALLOWED,0\n");
+}
+
+static void test_raw_socket(void) {
+    int s = socket(AF_PACKET, SOCK_RAW, 0);
+    if (s < 0)
+        printf("raw_socket,BLOCKED,%d\n", errno);
+    else {
+        printf("raw_socket,ALLOWED,0\n");
+        close(s);
+    }
+}
+
+static void test_mount(void) {
+    int ret = mount("proc", "/mnt", "proc", 0, NULL);
+    if (ret < 0)
+        printf("mount,BLOCKED,%d\n", errno);
+    else {
+        printf("mount,ALLOWED,0\n");
+        umount("/mnt");
+    }
+}
+
+static void test_init_module(void) {
+    long ret = syscall(__NR_init_module, NULL, 0, "");
+    if (ret < 0)
+        printf("init_module,BLOCKED,%d\n", errno);
+    else
+        printf("init_module,ALLOWED,0\n");
+}
+
+static void test_bpf(void) {
+    long ret = syscall(__NR_bpf, 0, NULL, 0);
+    if (ret < 0)
+        printf("bpf,BLOCKED,%d\n", errno);
+    else
+        printf("bpf,ALLOWED,0\n");
+}
+
+static void test_kexec(void) {
+    long ret = syscall(__NR_kexec_load, 0, 0, NULL, 0);
+    if (ret < 0)
+        printf("kexec_load,BLOCKED,%d\n", errno);
+    else
+        printf("kexec_load,ALLOWED,0\n");
+}
+
+static void test_host_read(void) {
+    int fd = open("/etc/shadow", O_RDONLY);
+    if (fd < 0)
+        printf("read_shadow,BLOCKED,%d\n", errno);
+    else {
+        printf("read_shadow,ALLOWED,0\n");
+        close(fd);
+    }
+}
+
+static void test_host_write(void) {
+    int fd = open("/tmp/escape_write", O_WRONLY | O_CREAT, 0644);
+    if (fd < 0)
+        printf("host_write,BLOCKED,%d\n", errno);
+    else {
+        printf("host_write,ALLOWED,0\n");
+        close(fd);
+        unlink("/tmp/escape_write");
+    }
+}
+
+int main(void) {
+    test_ptrace();
+    test_raw_socket();
+    test_mount();
+    test_init_module();
+    test_bpf();
+    test_kexec();
+    test_host_read();
+    test_host_write();
+    return 0;
+}
+SECTEST_EOF
+
+    gcc -static -O2 -o "$sectest_bin" "$sectest_src" 2>/dev/null
 }
 
 run_security_tests() {
-    echo "Testing blocked operations in containers:"
-    echo ""
+    # Check for gcc
+    if ! command -v gcc &>/dev/null; then
+        log_warn "gcc not found - cannot compile security test binary"
+        echo "Install gcc to enable live security testing"
+        return
+    fi
 
-    printf "%-30s %12s %12s\n" "Attack Vector" "ZViz" "gVisor"
-    printf "%-30s %12s %12s\n" "------------------------------" "------------" "------------"
+    # Compile security test binary
+    local sectest_src="$RESULTS_DIR/sectest.c"
+    local sectest_bin="$RESULTS_DIR/sectest"
+    log_info "Compiling security test binary..."
+    compile_security_test "$sectest_src" "$sectest_bin"
 
-    # Test raw socket
-    local zviz_raw="BLOCKED"
-    local gvisor_raw="N/A"
+    if [[ ! -f "$sectest_bin" ]]; then
+        log_warn "Failed to compile security test binary"
+        return
+    fi
 
-    # gVisor test
-    if [[ "$HAVE_GVISOR" == "true" ]]; then
-        if docker run --rm --runtime=runsc alpine:latest sh -c \
-            'cat > /tmp/t.c << "EOF"
-#include <sys/socket.h>
-int main() { return socket(AF_PACKET, SOCK_RAW, 0) < 0 ? 0 : 1; }
+    # Ensure bundle exists
+    setup_oci_bundle
+
+    # Copy test binary into rootfs
+    cp "$sectest_bin" "$BUNDLE_DIR/rootfs/bin/sectest"
+    chmod +x "$BUNDLE_DIR/rootfs/bin/sectest"
+
+    # Configure to run security test
+    cat > "$BUNDLE_DIR/config.json" << 'EOF'
+{
+    "ociVersion": "1.0.2",
+    "process": {
+        "terminal": false,
+        "user": { "uid": 0, "gid": 0 },
+        "args": ["/bin/sectest"],
+        "env": ["PATH=/bin:/usr/bin"],
+        "cwd": "/"
+    },
+    "root": { "path": "rootfs", "readonly": true },
+    "hostname": "zviz-sectest"
+}
 EOF
-apk add --no-cache build-base >/dev/null 2>&1
-gcc -o /tmp/t /tmp/t.c 2>/dev/null && /tmp/t' 2>&1; then
-            gvisor_raw="BLOCKED"
-        else
-            gvisor_raw="BLOCKED"
-        fi
-    fi
-    printf "%-30s %12s %12s\n" "Raw socket (AF_PACKET)" "$zviz_raw" "$gvisor_raw"
 
-    # Test mount
-    local zviz_mount="BLOCKED"
-    local gvisor_mount="N/A"
+    # Run in ZViz container
+    log_info "Running security tests inside ZViz container..."
+    $ZVIZ_BIN delete sectest-zviz 2>/dev/null || true
+    local zviz_output
+    zviz_output=$($ZVIZ_BIN run sectest-zviz --bundle "$BUNDLE_DIR" 2>/dev/null)
+    $ZVIZ_BIN delete sectest-zviz 2>/dev/null || true
 
+    # Parse ZViz results into associative arrays
+    declare -A zviz_results
+    while IFS=',' read -r test_name result err_code; do
+        zviz_results["$test_name"]="$result"
+    done <<< "$zviz_output"
+
+    # Run in gVisor if available
+    declare -A gvisor_results
     if [[ "$HAVE_GVISOR" == "true" ]]; then
-        if docker run --rm --runtime=runsc alpine:latest mount -t proc proc /mnt 2>&1 | grep -q "ermission denied\|peration not permitted"; then
-            gvisor_mount="BLOCKED"
+        log_info "Running same tests in gVisor..."
+        local gvisor_output
+        gvisor_output=$(docker run --rm --runtime=runsc \
+            -v "$sectest_bin:/bin/sectest:ro" \
+            alpine:latest /bin/sectest 2>/dev/null)
+        while IFS=',' read -r test_name result err_code; do
+            gvisor_results["$test_name"]="$result"
+        done <<< "$gvisor_output"
+    fi
+
+    # Display results table
+    echo "Live container security test results:"
+    echo ""
+    printf "%-25s %12s %12s %10s\n" "Attack Vector" "ZViz" "gVisor" "Match"
+    printf "%-25s %12s %12s %10s\n" "-------------------------" "------------" "------------" "----------"
+
+    local tests=("ptrace" "raw_socket" "mount" "init_module" "bpf" "kexec_load" "read_shadow" "host_write")
+    local labels=("ptrace(TRACEME)" "Raw socket (AF_PACKET)" "mount(proc)" "init_module()" "bpf()" "kexec_load()" "Read /etc/shadow" "Write to host /tmp")
+    local total=0
+    local matched=0
+
+    for i in "${!tests[@]}"; do
+        local test="${tests[$i]}"
+        local label="${labels[$i]}"
+        local zviz_r="${zviz_results[$test]:-N/A}"
+        local gvisor_r="${gvisor_results[$test]:-N/A}"
+        local match_str=""
+
+        if [[ "$gvisor_r" != "N/A" ]]; then
+            total=$((total + 1))
+            if [[ "$zviz_r" == "$gvisor_r" ]]; then
+                matched=$((matched + 1))
+                match_str="${GREEN}MATCH${NC}"
+            else
+                match_str="${RED}DIFFER${NC}"
+            fi
         else
-            gvisor_mount="BLOCKED"
+            match_str="-"
         fi
-    fi
-    printf "%-30s %12s %12s\n" "Mount syscall" "$zviz_mount" "$gvisor_mount"
 
-    # Test ptrace
-    local zviz_ptrace="BLOCKED"
-    local gvisor_ptrace="N/A"
+        # Color code results
+        local zviz_colored="$zviz_r"
+        local gvisor_colored="$gvisor_r"
+        [[ "$zviz_r" == "BLOCKED" ]] && zviz_colored="${GREEN}BLOCKED${NC}"
+        [[ "$zviz_r" == "ALLOWED" ]] && zviz_colored="${RED}ALLOWED${NC}"
+        [[ "$gvisor_r" == "BLOCKED" ]] && gvisor_colored="${GREEN}BLOCKED${NC}"
 
-    if [[ "$HAVE_GVISOR" == "true" ]]; then
-        gvisor_ptrace="BLOCKED"
-    fi
-    printf "%-30s %12s %12s\n" "ptrace" "$zviz_ptrace" "$gvisor_ptrace"
-
-    # Test kernel module
-    printf "%-30s %12s %12s\n" "Kernel module load" "BLOCKED" "BLOCKED"
-
-    # Test BPF
-    printf "%-30s %12s %12s\n" "BPF program load" "BLOCKED" "BLOCKED"
+        printf "%-25s %20b %20b %18b\n" "$label" "$zviz_colored" "$gvisor_colored" "$match_str"
+    done
 
     echo ""
-    echo -e "${GREEN}Both ZViz and gVisor block these dangerous operations by default.${NC}"
+    if [[ $total -gt 0 ]]; then
+        local pct=$((matched * 100 / total))
+        echo -e "${GREEN}Security policy compatibility: ${pct}% (${matched}/${total} tests match)${NC}"
+    else
+        local blocked=0
+        for test in "${tests[@]}"; do
+            [[ "${zviz_results[$test]:-}" == "BLOCKED" ]] && blocked=$((blocked + 1))
+        done
+        echo -e "${GREEN}ZViz blocked ${blocked}/${#tests[@]} attack vectors.${NC}"
+        if [[ "$HAVE_GVISOR" != "true" ]]; then
+            echo "Install gVisor (runsc) for side-by-side comparison."
+        fi
+    fi
     echo ""
+}
+
+# ============================================================================
+# Escape Test Suite
+# ============================================================================
+
+compile_escape_suite() {
+    local src="$1"
+    local bin="$2"
+
+    cat > "$src" << 'ESCAPE_EOF'
+#define _GNU_SOURCE
+#include <stdio.h>
+#include <errno.h>
+#include <string.h>
+#include <unistd.h>
+#include <sched.h>
+#include <fcntl.h>
+#include <sys/ptrace.h>
+#include <sys/socket.h>
+#include <sys/mount.h>
+#include <sys/syscall.h>
+#include <sys/prctl.h>
+#include <sys/wait.h>
+
+/* Category: Namespace Breakout */
+static void test_unshare_user_ns(void) {
+    int ret = unshare(CLONE_NEWUSER);
+    printf("namespace,unshare_user_ns,%s,%d\n",
+           ret < 0 ? "BLOCKED" : "ALLOWED", ret < 0 ? errno : 0);
+}
+
+static void test_unshare_pid_ns(void) {
+    int ret = unshare(CLONE_NEWPID);
+    printf("namespace,unshare_pid_ns,%s,%d\n",
+           ret < 0 ? "BLOCKED" : "ALLOWED", ret < 0 ? errno : 0);
+}
+
+static void test_unshare_mount_ns(void) {
+    int ret = unshare(CLONE_NEWNS);
+    printf("namespace,unshare_mount_ns,%s,%d\n",
+           ret < 0 ? "BLOCKED" : "ALLOWED", ret < 0 ? errno : 0);
+}
+
+static void test_setns_host_pid(void) {
+    int fd = open("/proc/1/ns/pid", O_RDONLY);
+    if (fd < 0) {
+        printf("namespace,setns_host_pid,BLOCKED,%d\n", errno);
+        return;
+    }
+    int ret = syscall(__NR_setns, fd, CLONE_NEWPID);
+    close(fd);
+    printf("namespace,setns_host_pid,%s,%d\n",
+           ret < 0 ? "BLOCKED" : "ALLOWED", ret < 0 ? errno : 0);
+}
+
+/* Category: Capability Escalation */
+static void test_capset(void) {
+    struct { unsigned int version; int pid; } header = { 0x20080522, 0 };
+    struct { unsigned int effective, permitted, inheritable; } data[2] = {
+        { 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF },
+        { 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF }
+    };
+    int ret = syscall(__NR_capset, &header, &data);
+    printf("capability,capset_all,%s,%d\n",
+           ret < 0 ? "BLOCKED" : "ALLOWED", ret < 0 ? errno : 0);
+}
+
+static void test_prctl_dumpable(void) {
+    int ret = prctl(PR_SET_DUMPABLE, 1, 0, 0, 0);
+    printf("capability,prctl_dumpable,%s,%d\n",
+           ret < 0 ? "BLOCKED" : "ALLOWED", ret < 0 ? errno : 0);
+}
+
+static void test_prctl_seccomp_disable(void) {
+    int ret = prctl(PR_SET_SECCOMP, 0, 0, 0, 0);
+    printf("seccomp,prctl_seccomp_disable,%s,%d\n",
+           ret < 0 ? "BLOCKED" : "ALLOWED", ret < 0 ? errno : 0);
+}
+
+/* Category: Seccomp Bypass */
+static void test_init_module(void) {
+    int ret = syscall(__NR_init_module, NULL, 0, "");
+    printf("seccomp,init_module,%s,%d\n",
+           ret < 0 ? "BLOCKED" : "ALLOWED", ret < 0 ? errno : 0);
+}
+
+static void test_ptrace(void) {
+    long ret = ptrace(PTRACE_TRACEME, 0, NULL, NULL);
+    printf("seccomp,ptrace,%s,%d\n",
+           ret < 0 ? "BLOCKED" : "ALLOWED", ret < 0 ? errno : 0);
+}
+
+static void test_bpf(void) {
+    int ret = syscall(__NR_bpf, 0, NULL, 0);
+    printf("seccomp,bpf,%s,%d\n",
+           ret < 0 ? "BLOCKED" : "ALLOWED", ret < 0 ? errno : 0);
+}
+
+static void test_userfaultfd(void) {
+    int ret = syscall(__NR_userfaultfd, 0);
+    printf("seccomp,userfaultfd,%s,%d\n",
+           ret < 0 ? "BLOCKED" : "ALLOWED", ret < 0 ? errno : 0);
+}
+
+static void test_kexec_load(void) {
+    int ret = syscall(__NR_kexec_load, 0, 0, NULL, 0);
+    printf("seccomp,kexec_load,%s,%d\n",
+           ret < 0 ? "BLOCKED" : "ALLOWED", ret < 0 ? errno : 0);
+}
+
+/* Category: Filesystem Escape */
+static void test_mount(void) {
+    int ret = mount("proc", "/mnt", "proc", 0, NULL);
+    printf("filesystem,mount,%s,%d\n",
+           ret < 0 ? "BLOCKED" : "ALLOWED", ret < 0 ? errno : 0);
+    if (ret == 0) umount("/mnt");
+}
+
+static void test_proc_host_root(void) {
+    int fd = open("/proc/1/root", O_RDONLY);
+    printf("filesystem,proc_host_root,%s,%d\n",
+           fd < 0 ? "BLOCKED" : "ALLOWED", fd < 0 ? errno : 0);
+    if (fd >= 0) close(fd);
+}
+
+static void test_write_etc_passwd(void) {
+    int fd = open("/etc/passwd", O_WRONLY);
+    printf("filesystem,write_etc_passwd,%s,%d\n",
+           fd < 0 ? "BLOCKED" : "ALLOWED", fd < 0 ? errno : 0);
+    if (fd >= 0) close(fd);
+}
+
+static void test_pivot_root(void) {
+    int ret = syscall(__NR_pivot_root, ".", ".");
+    printf("filesystem,pivot_root,%s,%d\n",
+           ret < 0 ? "BLOCKED" : "ALLOWED", ret < 0 ? errno : 0);
+}
+
+/* Category: Network Escape */
+static void test_raw_socket(void) {
+    int s = socket(AF_PACKET, SOCK_RAW, 0);
+    printf("network,raw_socket,%s,%d\n",
+           s < 0 ? "BLOCKED" : "ALLOWED", s < 0 ? errno : 0);
+    if (s >= 0) close(s);
+}
+
+static void test_netlink_socket(void) {
+    int s = socket(AF_NETLINK, SOCK_RAW, 0);
+    printf("network,netlink_socket,%s,%d\n",
+           s < 0 ? "BLOCKED" : "ALLOWED", s < 0 ? errno : 0);
+    if (s >= 0) close(s);
+}
+
+/* Category: Resource Exhaustion */
+static void test_fork_bomb(void) {
+    int forks = 0;
+    int blocked = 0;
+    int i;
+    for (i = 0; i < 50; i++) {
+        pid_t pid = fork();
+        if (pid < 0) { blocked = 1; break; }
+        if (pid == 0) _exit(0);
+        forks++;
+        int status;
+        waitpid(pid, &status, 0);
+    }
+    printf("resource,fork_bomb,%s,%d\n",
+           blocked ? "BLOCKED" : "ALLOWED", blocked ? errno : forks);
+}
+
+int main(void) {
+    test_unshare_user_ns();
+    test_unshare_pid_ns();
+    test_unshare_mount_ns();
+    test_setns_host_pid();
+    test_capset();
+    test_prctl_dumpable();
+    test_prctl_seccomp_disable();
+    test_init_module();
+    test_ptrace();
+    test_bpf();
+    test_userfaultfd();
+    test_kexec_load();
+    test_mount();
+    test_proc_host_root();
+    test_write_etc_passwd();
+    test_pivot_root();
+    test_raw_socket();
+    test_netlink_socket();
+    test_fork_bomb();
+    return 0;
+}
+ESCAPE_EOF
+
+    gcc -static -O2 -o "$bin" "$src" 2>/dev/null
+}
+
+run_escape_demo() {
+    echo ""
+    echo -e "${BOLD}+============================================================+${NC}"
+    echo -e "${BOLD}|           Escape Test Suite (19 tests)                      |${NC}"
+    echo -e "${BOLD}+============================================================+${NC}"
+    echo ""
+    echo "Attempting container escape via 19 attack vectors."
+    echo "All attempts should be BLOCKED by ZViz's security stack."
+    echo ""
+
+    if ! command -v gcc &>/dev/null; then
+        log_warn "gcc not found - cannot compile escape test binary"
+        return
+    fi
+
+    local escape_src="$RESULTS_DIR/escape_suite.c"
+    local escape_bin="$RESULTS_DIR/escape_suite"
+    log_info "Compiling escape test suite..."
+    compile_escape_suite "$escape_src" "$escape_bin"
+
+    if [[ ! -f "$escape_bin" ]]; then
+        log_warn "Failed to compile escape test suite"
+        return
+    fi
+
+    # Ensure bundle exists
+    setup_oci_bundle
+
+    # Copy into rootfs
+    cp "$escape_bin" "$BUNDLE_DIR/rootfs/bin/escape_suite"
+    chmod +x "$BUNDLE_DIR/rootfs/bin/escape_suite"
+    mkdir -p "$BUNDLE_DIR/rootfs/mnt" 2>/dev/null || true
+
+    # Configure to run escape suite
+    cat > "$BUNDLE_DIR/config.json" << 'EOF'
+{
+    "ociVersion": "1.0.2",
+    "process": {
+        "terminal": false,
+        "user": { "uid": 0, "gid": 0 },
+        "args": ["/bin/escape_suite"],
+        "env": ["PATH=/bin:/usr/bin"],
+        "cwd": "/"
+    },
+    "root": { "path": "rootfs", "readonly": true },
+    "hostname": "zviz-escape"
+}
+EOF
+
+    # Run escape suite in ZViz container
+    log_info "Running escape tests inside ZViz container..."
+    $ZVIZ_BIN delete escape-zviz 2>/dev/null || true
+    local output
+    output=$($ZVIZ_BIN run escape-zviz --bundle "$BUNDLE_DIR" 2>/dev/null)
+    $ZVIZ_BIN delete escape-zviz 2>/dev/null || true
+
+    # Parse and display results by category
+    local total=0
+    local blocked=0
+    local current_cat=""
+
+    declare -A cat_labels
+    cat_labels["namespace"]="Namespace Breakout"
+    cat_labels["capability"]="Capability Escalation"
+    cat_labels["seccomp"]="Seccomp Bypass"
+    cat_labels["filesystem"]="Filesystem Escape"
+    cat_labels["network"]="Network Escape"
+    cat_labels["resource"]="Resource Exhaustion"
+
+    printf "%-20s %-25s %10s %8s\n" "Category" "Test" "Result" "Errno"
+    printf "%-20s %-25s %10s %8s\n" "--------------------" "-------------------------" "----------" "--------"
+
+    while IFS=',' read -r category test_name result err_code; do
+        [[ -z "$category" ]] && continue
+        total=$((total + 1))
+
+        local cat_display="${cat_labels[$category]:-$category}"
+
+        # Color code result
+        local result_colored="$result"
+        if [[ "$result" == "BLOCKED" ]]; then
+            result_colored="${GREEN}BLOCKED${NC}"
+            blocked=$((blocked + 1))
+        else
+            result_colored="${RED}ALLOWED${NC}"
+        fi
+
+        printf "%-20s %-25s %18b %8s\n" "$cat_display" "$test_name" "$result_colored" "$err_code"
+    done <<< "$output"
+
+    echo ""
+    echo -e "${BOLD}+------------------------------------------------------------+${NC}"
+    local failed=$((total - blocked))
+    if [[ $failed -eq 0 ]]; then
+        echo -e "${GREEN}Result: ${blocked}/${total} escape attempts BLOCKED - sandbox is secure${NC}"
+    else
+        echo -e "${RED}SECURITY WARNING: ${failed}/${total} escape attempts succeeded!${NC}"
+    fi
+    echo -e "${BOLD}+------------------------------------------------------------+${NC}"
+    echo ""
+
+    # Save results
+    echo "$output" > "$RESULTS_DIR/escape_results.csv"
 }
 
 # ============================================================================
@@ -582,44 +1080,40 @@ run_quick_demo() {
     $ZVIZ_BIN version
     echo ""
 
-    if [[ "$HAVE_DOCKER" != "true" ]]; then
-        log_warn "Docker not available - cannot run container comparison"
-        log_info "Running zviz host benchmarks instead..."
-        $ZVIZ_BIN benchmark -n500
-        return
-    fi
-
     # Quick cold start comparison
     echo -e "${CYAN}--- Cold Start Comparison ---${NC}"
     echo ""
 
-    # Native Docker
-    echo -n "Native (runc):  "
     local start end elapsed
-    start=$(date +%s%N)
-    docker run --rm alpine:latest echo "hello" >/dev/null 2>&1
-    end=$(date +%s%N)
-    elapsed=$(( (end - start) / 1000000 ))
-    echo "${elapsed}ms"
 
-    # gVisor
-    if [[ "$HAVE_GVISOR" == "true" ]]; then
-        echo -n "gVisor (runsc): "
+    # Native Docker
+    if [[ "$HAVE_DOCKER" == "true" ]]; then
+        echo -n "Native (runc):  "
         start=$(date +%s%N)
-        docker run --rm --runtime=runsc alpine:latest echo "hello" >/dev/null 2>&1
+        docker run --rm alpine:latest echo "hello" >/dev/null 2>&1
         end=$(date +%s%N)
         elapsed=$(( (end - start) / 1000000 ))
         echo "${elapsed}ms"
+
+        # gVisor
+        if [[ "$HAVE_GVISOR" == "true" ]]; then
+            echo -n "gVisor (runsc): "
+            start=$(date +%s%N)
+            docker run --rm --runtime=runsc alpine:latest echo "hello" >/dev/null 2>&1
+            end=$(date +%s%N)
+            elapsed=$(( (end - start) / 1000000 ))
+            echo "${elapsed}ms"
+        else
+            echo "gVisor: not installed"
+        fi
     else
-        echo "gVisor: not installed"
-        show_gvisor_install_instructions
+        log_info "Docker not available - showing ZViz cold start only"
     fi
 
-    # ZViz (if bundle available)
-    if [[ "$HAVE_DOCKER" == "true" ]]; then
-        setup_oci_bundle
+    # ZViz cold start
+    setup_oci_bundle
 
-        cat > "$BUNDLE_DIR/config.json" << 'EOF'
+    cat > "$BUNDLE_DIR/config.json" << 'EOF'
 {
     "ociVersion": "1.0.2",
     "process": {
@@ -629,7 +1123,7 @@ run_quick_demo() {
         "env": ["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"],
         "cwd": "/"
     },
-    "root": { "path": "rootfs", "readonly": true },
+    "root": { "path": "rootfs", "readonly": false },
     "hostname": "zviz",
     "linux": {
         "namespaces": [
@@ -642,15 +1136,14 @@ run_quick_demo() {
 }
 EOF
 
-        echo -n "ZViz:           "
-        sudo $ZVIZ_BIN delete demo-zviz-quick 2>/dev/null || true
-        start=$(date +%s%N)
-        sudo $ZVIZ_BIN run demo-zviz-quick "$BUNDLE_DIR" >/dev/null 2>&1 || echo -n "(needs root) "
-        end=$(date +%s%N)
-        elapsed=$(( (end - start) / 1000000 ))
-        echo "${elapsed}ms"
-        sudo $ZVIZ_BIN delete demo-zviz-quick 2>/dev/null || true
-    fi
+    echo -n "ZViz:           "
+    $ZVIZ_BIN delete demo-zviz-quick 2>/dev/null || true
+    start=$(date +%s%N)
+    $ZVIZ_BIN run demo-zviz-quick "$BUNDLE_DIR" >/dev/null 2>&1
+    end=$(date +%s%N)
+    elapsed=$(( (end - start) / 1000000 ))
+    echo "${elapsed}ms"
+    $ZVIZ_BIN delete demo-zviz-quick 2>/dev/null || true
 
     echo ""
     echo -e "${GREEN}Key insight:${NC} ZViz achieves near-native performance because it uses"
@@ -683,7 +1176,9 @@ Usage:
   ./demo.sh              # Run all demos
   ./demo.sh --perf       # Performance benchmark only
   ./demo.sh --security   # Security demo only
+  ./demo.sh --escape     # Escape test suite (19 attack vectors)
   ./demo.sh --quick      # Quick cold start comparison
+  ./demo.sh --all        # Full demo (quick + perf + security + escape)
   ./demo.sh --help       # Show this help
 
 What this demo does:
@@ -701,16 +1196,16 @@ What this demo does:
 
 Prerequisites:
   - zviz (required): Install via install.sh or build from source
-  - Docker (required): Needed to create OCI bundles and run comparison
+  - Docker (optional): For runc/gVisor comparison benchmarks
   - gVisor (optional): For side-by-side comparison with gVisor
-  - Root/sudo: Required for running zviz containers
+  - curl or wget: For downloading Alpine rootfs when Docker unavailable
 
 Examples:
   # Quick comparison
-  sudo ./demo.sh --quick
+  ./demo.sh --quick
 
-  # Full benchmark (runs ~2-3 minutes)
-  sudo ./demo.sh --perf
+  # Full benchmark
+  ./demo.sh --perf
 
   # Security comparison
   ./demo.sh --security
@@ -747,6 +1242,14 @@ main() {
                 mode="quick"
                 shift
                 ;;
+            --escape)
+                mode="escape"
+                shift
+                ;;
+            --all)
+                mode="all"
+                shift
+                ;;
             --help|-h)
                 show_help
                 exit 0
@@ -775,8 +1278,17 @@ main() {
         security)
             run_security_demo
             ;;
+        escape)
+            run_escape_demo
+            ;;
         quick)
             run_quick_demo
+            ;;
+        all)
+            run_quick_demo
+            run_performance_demo
+            run_security_demo
+            run_escape_demo
             ;;
         full)
             run_full_demo

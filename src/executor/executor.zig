@@ -6,6 +6,7 @@ const containment = @import("../containment/containment.zig");
 const seccomp = @import("../seccomp/seccomp.zig");
 const cgroup = @import("../cgroup/cgroup.zig");
 const console_mod = @import("console.zig");
+const lsm = @import("../lsm/lsm.zig");
 
 /// Container executor - handles the actual fork/exec of container processes
 
@@ -107,11 +108,14 @@ pub const ExecConfig = struct {
     /// Group ID to run as
     gid: u32 = 0,
 
-    /// Namespaces to create
+    /// Namespaces to create (NEWUSER is added automatically in rootless mode)
     namespaces: u64 = CloneFlags.NEWNS | CloneFlags.NEWPID | CloneFlags.NEWIPC | CloneFlags.NEWUTS,
 
-    /// Whether to set up user namespace
+    /// Whether to set up user namespace (required for rootless mode)
     user_ns: bool = true,
+
+    /// Rootless mode - set to null for auto-detection at runtime
+    rootless: ?bool = null,
 
     /// Seccomp policy to apply
     seccomp_policy: ?seccomp.SyscallPolicy = null,
@@ -133,6 +137,12 @@ pub const ExecConfig = struct {
 
     /// Hostname for UTS namespace
     hostname: ?[]const u8 = null,
+
+    /// Drop all capabilities in the bounding set
+    drop_capabilities: bool = true,
+
+    /// Enable Landlock filesystem restrictions
+    enable_landlock: bool = true,
 };
 
 // ============================================================================
@@ -157,10 +167,19 @@ pub const Executor = struct {
     stdout_pipe: ?SyncPipe = null,
     stderr_pipe: ?SyncPipe = null,
 
+    // Track if we're in rootless mode (determined at init, before any namespace changes)
+    is_rootless: bool = false,
+
+    // Track if filesystem isolation (chroot/pivot_root) succeeded
+    fs_isolated: bool = false,
+
     pub fn init(allocator: std.mem.Allocator, config: ExecConfig) Executor {
+        // Determine rootless status at init time (before any namespaces are created)
+        const rootless = config.rootless orelse (std.os.linux.getuid() != 0);
         return .{
             .allocator = allocator,
             .config = config,
+            .is_rootless = rootless,
         };
     }
 
@@ -184,32 +203,36 @@ pub const Executor = struct {
         // Set up console/stdio
         try self.setupStdio();
 
+        log.debug("About to fork container", .{});
+
         // Fork the container process
         const pid = try self.forkContainer();
         self.child_pid = pid;
 
         if (pid == 0) {
             // Child process - this runs in the container
-            self.childProcess() catch |err| {
-                log.err("Container child error: {s}", .{@errorName(err)});
-                std.process.exit(1);
+            self.childProcess() catch {
+                // Use raw exit_group syscall - std.process.exit may access /proc
+                // which is unavailable inside the chroot
+                _ = std.os.linux.syscall1(.exit_group, 1);
+                unreachable;
             };
             unreachable;
         }
 
         // Parent process
+        log.debug("Parent: child forked with pid {d}", .{pid});
         return try self.parentProcess(pid);
     }
 
-    /// Set up stdio for the container (PTY or pipes)
+    /// Set up stdio for the container (PTY or inherited)
     fn setupStdio(self: *Executor) !void {
         if (self.config.terminal) {
             // Terminal mode: create PTY
             self.console = console_mod.Console.init(self.allocator);
             self.console.?.createPty() catch |err| {
-                log.warn("Failed to create PTY: {s}, falling back to pipes", .{@errorName(err)});
+                log.warn("Failed to create PTY: {s}, falling back to inherited stdio", .{@errorName(err)});
                 self.console = null;
-                try self.setupPipes();
                 return;
             };
 
@@ -227,11 +250,8 @@ pub const Executor = struct {
             }
 
             log.debug("Console mode: PTY allocated", .{});
-        } else {
-            // Non-terminal mode: create pipes for stdin/stdout/stderr
-            try self.setupPipes();
-            log.debug("Console mode: pipes", .{});
         }
+        // Non-terminal mode: child inherits parent's stdin/stdout/stderr directly
     }
 
     /// Set up stdio pipes for non-terminal mode
@@ -241,10 +261,8 @@ pub const Executor = struct {
         self.stderr_pipe = try SyncPipe.init();
     }
 
-    /// Fork with namespaces
+    /// Fork the container process
     fn forkContainer(self: *Executor) !i32 {
-        // Use standard fork
-        // Namespace setup will be done after fork in the child using unshare
         const fork_result = std.os.linux.fork();
         const fork_signed: isize = @bitCast(fork_result);
 
@@ -254,24 +272,57 @@ pub const Executor = struct {
         }
 
         if (fork_signed == 0) {
-            // In child - unshare namespaces
-            self.unshareNamespaces() catch |err| {
-                log.err("Failed to unshare namespaces: {s}", .{@errorName(err)});
-                std.process.exit(1);
+            // Child: create namespaces
+            self.unshareUserNamespace() catch |err| {
+                log.err("Failed to create namespaces: {s}", .{@errorName(err)});
+                _ = std.os.linux.syscall1(.exit_group, 1);
+                unreachable;
             };
         }
 
         return @intCast(fork_signed);
     }
 
-    /// Unshare namespaces in child process
+    /// Check if running in rootless mode (uses cached value from init)
+    fn isRootless(self: *Executor) bool {
+        return self.is_rootless;
+    }
+
+    /// Unshare user namespace (phase 1 - before uid/gid maps are written)
+    /// In rootless mode, we create USER + all other namespaces together
+    fn unshareUserNamespace(self: *Executor) !void {
+        if (!self.isRootless()) return;
+
+        // In rootless mode, create user namespace AND all other namespaces together
+        const flags: u32 = @truncate(self.config.namespaces | CloneFlags.NEWUSER);
+
+        if (flags == 0) return; // No namespaces requested
+
+        const result = std.os.linux.unshare(flags);
+        if (@as(isize, @bitCast(result)) < 0) {
+            const errno: u16 = @truncate(@as(usize, @bitCast(-@as(isize, @bitCast(result)))));
+            log.err("Failed to create namespaces (flags: 0x{x}, errno: {d})", .{ flags, errno });
+            return errors.Error.NamespaceCreationFailed;
+        }
+        log.debug("Created all namespaces for rootless mode (flags: 0x{x})", .{flags});
+    }
+
+    /// Unshare remaining namespaces (phase 2 - after uid/gid maps are written)
+    /// In rootless mode, this is a no-op since namespaces were created in phase 1
     fn unshareNamespaces(self: *Executor) !void {
+        // In rootless mode, all namespaces were created in phase 1
+        if (self.isRootless()) {
+            return;
+        }
+
         const flags: u32 = @truncate(self.config.namespaces);
 
         if (flags == 0) return;
 
         const result = std.os.linux.unshare(flags);
         if (@as(isize, @bitCast(result)) < 0) {
+            const errno: u16 = @truncate(@as(usize, @bitCast(-@as(isize, @bitCast(result)))));
+            log.err("Failed to unshare namespaces (flags: 0x{x}, errno: {d})", .{ flags, errno });
             return errors.Error.NamespaceCreationFailed;
         }
 
@@ -284,15 +335,15 @@ pub const Executor = struct {
         if (self.parent_to_child) |*p| p.closeWrite();
         if (self.child_to_parent) |*p| p.closeRead();
 
-        // Set up console/stdio for child
-        try self.setupChildStdio();
-
         // Wait for parent to set up cgroups, uid_map, etc.
         if (self.parent_to_child) |*p| {
             try p.wait();
         }
 
-        // Set up namespaces that weren't created at clone time
+        // Now that uid/gid maps are written, create remaining namespaces
+        try self.unshareNamespaces();
+
+        // Set up user namespace if configured
         if (self.config.user_ns) {
             try self.setupUserNamespace();
         }
@@ -302,12 +353,41 @@ pub const Executor = struct {
             try self.setHostname(hostname);
         }
 
-        // Set up filesystem
+        // Set up filesystem (chroot + chdir)
         try self.setupFilesystem();
 
         // Set no_new_privs
         if (self.config.no_new_privs) {
-            try containment.setNoNewPrivs();
+            containment.setNoNewPrivs() catch {};
+        }
+
+        // Drop capabilities from bounding set
+        if (self.config.drop_capabilities) {
+            containment.dropCapabilities(&.{}) catch |err| {
+                log.debug("Failed to drop capabilities: {s}", .{@errorName(err)});
+            };
+        }
+
+        // Apply Landlock filesystem restrictions
+        if (self.config.enable_landlock) {
+            if (self.fs_isolated) {
+                // Chroot/pivot_root mode: restrict within the new root
+                const rules = [_]lsm.LandlockPathRule{
+                    .{ .path = "/", .access = lsm.LANDLOCK_ACCESS_FS_READ_EXEC },
+                    .{ .path = "/tmp", .access = lsm.LANDLOCK_ACCESS_FS_READ_WRITE },
+                };
+                lsm.applyLandlockRulesWithPaths(&rules) catch |err| {
+                    log.debug("Landlock unavailable: {s}", .{@errorName(err)});
+                };
+            } else {
+                // Chdir fallback mode: restrict to rootfs subtree
+                const rules = [_]lsm.LandlockPathRule{
+                    .{ .path = self.config.rootfs, .access = lsm.LANDLOCK_ACCESS_FS_READ_EXEC },
+                };
+                lsm.applyLandlockRulesWithPaths(&rules) catch |err| {
+                    log.debug("Landlock unavailable: {s}", .{@errorName(err)});
+                };
+            }
         }
 
         // Load seccomp filter
@@ -322,13 +402,31 @@ pub const Executor = struct {
         }
 
         // Change to target uid/gid
-        try self.setUser();
+        _ = std.os.linux.syscall2(.setgroups, 0, 0);
+        _ = std.os.linux.syscall1(.setgid, self.config.gid);
+        _ = std.os.linux.syscall1(.setuid, self.config.uid);
 
         // Change to working directory
-        try self.changeDir();
+        if (self.fs_isolated) {
+            std.posix.chdir(self.config.cwd) catch {};
+        } else {
+            // In chdir mode, we're already in the rootfs. Only change if cwd != "/"
+            if (!std.mem.eql(u8, self.config.cwd, "/")) {
+                // Convert absolute cwd to relative: "/tmp" -> "./tmp"
+                var cwd_buf: [512]u8 = undefined;
+                if (self.config.cwd.len > 0 and self.config.cwd[0] == '/' and self.config.cwd.len + 1 < cwd_buf.len) {
+                    cwd_buf[0] = '.';
+                    @memcpy(cwd_buf[1 .. self.config.cwd.len + 1], self.config.cwd);
+                    cwd_buf[self.config.cwd.len + 1] = 0;
+                    std.posix.chdir(cwd_buf[0 .. self.config.cwd.len + 1]) catch {};
+                } else {
+                    std.posix.chdir(self.config.cwd) catch {};
+                }
+            }
+        }
 
         // Execute the command
-        try self.execCommand();
+        self.execCommandDirect();
     }
 
     /// Set up stdio in child process
@@ -416,12 +514,8 @@ pub const Executor = struct {
         if (self.console) |*c| {
             // Close slave in parent
             c.setupForParent();
-        } else {
-            // Close child ends of pipes in parent
-            if (self.stdin_pipe) |*p| p.closeRead();
-            if (self.stdout_pipe) |*p| p.closeWrite();
-            if (self.stderr_pipe) |*p| p.closeWrite();
         }
+        // Non-terminal: nothing to do, child inherits our stdio
     }
 
     fn setupUserNamespace(self: *Executor) !void {
@@ -440,44 +534,143 @@ pub const Executor = struct {
     }
 
     fn setupFilesystem(self: *Executor) !void {
-        // Set up the container filesystem using pivot_root
-        const config = containment.Config{
-            .namespaces = &.{},
-            .rootfs_readonly = self.config.rootfs_readonly,
-            .no_new_privileges = false, // We'll set this separately
-        };
-        _ = config;
-
-        // For now, just chroot (pivot_root requires more setup)
-        const result = std.os.linux.syscall1(.chroot, @intFromPtr(self.config.rootfs.ptr));
-        if (@as(isize, @bitCast(result)) < 0) {
-            log.err("chroot failed", .{});
+        // Need null-terminated string for syscalls
+        var rootfs_buf: [std.fs.max_path_bytes:0]u8 = undefined;
+        const rootfs_z = std.fmt.bufPrintZ(&rootfs_buf, "{s}", .{self.config.rootfs}) catch {
+            log.err("rootfs path too long", .{});
             return errors.Error.NamespaceCreationFailed;
+        };
+
+        log.debug("Setting up filesystem, rootfs: {s}", .{rootfs_z});
+
+        // Try pivot_root approach (works with AppArmor restricted user namespaces)
+        if (self.tryPivotRoot(rootfs_z)) {
+            self.fs_isolated = true;
+            log.debug("Filesystem setup complete (pivot_root)", .{});
+            return;
         }
 
-        // Change to root
-        std.posix.chdir("/") catch {
-            return errors.Error.NamespaceCreationFailed;
-        };
+        // Fallback: try chroot (works when CAP_SYS_CHROOT is available)
+        const result = std.os.linux.syscall1(.chroot, @intFromPtr(rootfs_z.ptr));
+        if (@as(isize, @bitCast(result)) >= 0) {
+            self.fs_isolated = true;
+            std.posix.chdir("/") catch {
+                return errors.Error.NamespaceCreationFailed;
+            };
+            log.debug("Filesystem setup complete (chroot)", .{});
+            return;
+        }
 
-        log.debug("Filesystem setup complete", .{});
+        // Last resort: chdir to rootfs (commands use rootfs-relative paths)
+        if (self.is_rootless) {
+            log.debug("pivot_root and chroot both failed, using chdir fallback", .{});
+            std.posix.chdir(self.config.rootfs) catch |err| {
+                log.err("Failed to chdir to rootfs: {s}", .{@errorName(err)});
+                return errors.Error.NamespaceCreationFailed;
+            };
+            return;
+        }
+
+        log.err("Failed to set up filesystem isolation", .{});
+        return errors.Error.NamespaceCreationFailed;
+    }
+
+    /// Try pivot_root approach: bind-mount rootfs, pivot, unmount old root
+    fn tryPivotRoot(self: *Executor, rootfs_z: [:0]const u8) bool {
+        _ = self;
+        const MS_BIND: usize = 0x1000;
+        const MS_REC: usize = 0x4000;
+        const MNT_DETACH: usize = 0x2;
+
+        // Step 1: Bind mount rootfs onto itself (makes it a mount point)
+        const mount_result = std.os.linux.syscall5(
+            .mount,
+            @intFromPtr(rootfs_z.ptr),
+            @intFromPtr(rootfs_z.ptr),
+            0, // filesystemtype (NULL for bind)
+            MS_BIND | MS_REC,
+            0, // data (NULL)
+        );
+        if (@as(isize, @bitCast(mount_result)) < 0) {
+            const errno: u16 = @truncate(@as(usize, @bitCast(-@as(isize, @bitCast(mount_result)))));
+            log.debug("bind mount failed (errno: {d})", .{errno});
+            return false;
+        }
+
+        // Step 2: Create directory for old root
+        var pivot_old_buf: [std.fs.max_path_bytes:0]u8 = undefined;
+        const pivot_old_z = std.fmt.bufPrintZ(&pivot_old_buf, "{s}/.pivot_old", .{rootfs_z}) catch return false;
+
+        const mkdir_result = std.os.linux.syscall2(.mkdir, @intFromPtr(pivot_old_z.ptr), 0o700);
+        const mkdir_signed: isize = @bitCast(mkdir_result);
+        if (mkdir_signed < 0 and mkdir_signed != -17) { // -17 = EEXIST, which is fine
+            log.debug("mkdir .pivot_old failed (errno: {d})", .{@as(u16, @truncate(@as(usize, @bitCast(-mkdir_signed))))});
+            return false;
+        }
+
+        // Step 3: pivot_root(new_root, put_old)
+        const pivot_result = std.os.linux.syscall2(
+            .pivot_root,
+            @intFromPtr(rootfs_z.ptr),
+            @intFromPtr(pivot_old_z.ptr),
+        );
+        if (@as(isize, @bitCast(pivot_result)) < 0) {
+            const errno: u16 = @truncate(@as(usize, @bitCast(-@as(isize, @bitCast(pivot_result)))));
+            log.debug("pivot_root failed (errno: {d})", .{errno});
+            // Clean up mkdir
+            _ = std.os.linux.syscall1(.rmdir, @intFromPtr(pivot_old_z.ptr));
+            return false;
+        }
+
+        // Step 4: chdir to new root
+        std.posix.chdir("/") catch return false;
+
+        // Step 5: Unmount old root (detach so it goes away when all refs are gone)
+        const old_root: [*:0]const u8 = "/.pivot_old";
+        _ = std.os.linux.syscall2(.umount2, @intFromPtr(old_root), MNT_DETACH);
+
+        // Step 6: Remove the old root directory
+        _ = std.os.linux.syscall1(.rmdir, @intFromPtr(old_root));
+
+        return true;
     }
 
     fn loadSeccomp(self: *Executor, policy: seccomp.SyscallPolicy) !void {
-        // Generate BPF program
-        const bpf = seccomp.generateBpf(self.allocator, policy) catch |err| {
-            log.err("Failed to generate seccomp BPF: {s}", .{@errorName(err)});
+        // Without a broker listener, broker-listed syscalls must be allowed
+        // (USER_NOTIF without a listener would block/fail the syscall)
+        const effective_allow = self.allocator.alloc(i32, policy.allow.len + policy.broker.len) catch |err| {
+            log.err("Failed to allocate seccomp policy: {s}", .{@errorName(err)});
             return errors.Error.SeccompLoadFailed;
         };
-        defer self.allocator.free(bpf);
+
+        @memcpy(effective_allow[0..policy.allow.len], policy.allow);
+        @memcpy(effective_allow[policy.allow.len..], policy.broker);
+
+        const effective_policy = seccomp.SyscallPolicy{
+            .allow = effective_allow,
+            .deny = policy.deny,
+            .broker = &.{}, // No broker syscalls when no listener
+        };
+
+        // Generate BPF program
+        const bpf = seccomp.generateBpf(self.allocator, effective_policy) catch |err| {
+            log.err("Failed to generate seccomp BPF: {s}", .{@errorName(err)});
+            self.allocator.free(effective_allow);
+            return errors.Error.SeccompLoadFailed;
+        };
 
         // Load the filter
         seccomp.loadFilter(bpf) catch |err| {
             log.err("Failed to load seccomp filter: {s}", .{@errorName(err)});
+            self.allocator.free(bpf);
+            self.allocator.free(effective_allow);
             return errors.Error.SeccompLoadFailed;
         };
 
-        log.debug("Seccomp filter loaded ({d} instructions)", .{bpf.len});
+        // Note: we intentionally do NOT free bpf/effective_allow here.
+        // After seccomp is loaded, the GPA's free() may use syscalls blocked
+        // by the filter. The child is about to exec (replacing the process
+        // image) so the OS will reclaim all memory.
     }
 
     fn setUser(self: *Executor) !void {
@@ -507,33 +700,90 @@ pub const Executor = struct {
     }
 
     fn execCommand(self: *Executor) !void {
+        self.execCommandDirect();
+    }
+
+    /// Execute the container command
+    fn execCommandDirect(self: *Executor) noreturn {
         if (self.config.args.len == 0) {
-            log.err("No command specified", .{});
-            return errors.Error.InvalidSyscallArgs;
+            _ = std.os.linux.syscall1(.exit_group, 1);
+            unreachable;
         }
 
-        // Convert args to null-terminated format for execve
-        const argv = try self.allocator.allocSentinel(?[*:0]const u8, self.config.args.len, null);
-        defer self.allocator.free(argv);
+        // Use fixed-size stack buffers for arg/env strings
+        // Each string gets its own buffer with null terminator
+        var str_bufs: [32][512]u8 = undefined;
+        var str_ptrs: [32][*:0]const u8 = undefined;
+        var str_count: usize = 0;
 
+        // Helper to add a null-terminated string
+        const addStr = struct {
+            fn f(bufs: *[32][512]u8, ptrs: *[32][*:0]const u8, count: *usize, src: []const u8) void {
+                if (count.* >= 32 or src.len >= 511) return;
+                const idx = count.*;
+                @memcpy(bufs[idx][0..src.len], src);
+                bufs[idx][src.len] = 0;
+                ptrs[idx] = @ptrCast(&bufs[idx]);
+                count.* += 1;
+            }
+        }.f;
+
+        // When filesystem is not isolated (chdir fallback), adjust absolute
+        // paths to be relative to the rootfs we chdir'd into
+        var path_bufs: [32][512]u8 = undefined;
+
+        // Add args
+        const arg_start: usize = 0;
         for (self.config.args, 0..) |arg, i| {
-            argv[i] = try self.allocator.dupeZ(u8, arg);
+            if (!self.fs_isolated and arg.len > 0 and arg[0] == '/' and arg.len + 1 < 512) {
+                // Convert absolute path to rootfs-relative: "/bin/sh" -> "./bin/sh"
+                path_bufs[i][0] = '.';
+                @memcpy(path_bufs[i][1 .. arg.len + 1], arg);
+                addStr(&str_bufs, &str_ptrs, &str_count, path_bufs[i][0 .. arg.len + 1]);
+            } else {
+                addStr(&str_bufs, &str_ptrs, &str_count, arg);
+            }
+        }
+        const arg_end = str_count;
+
+        // Add env
+        const env_start = str_count;
+        if (self.config.env.len > 0) {
+            for (self.config.env) |env_var| {
+                addStr(&str_bufs, &str_ptrs, &str_count, env_var);
+            }
+        } else {
+            addStr(&str_bufs, &str_ptrs, &str_count, "PATH=/usr/local/bin:/usr/bin:/bin");
+        }
+        const env_end = str_count;
+
+        // Build argv (null-terminated pointer array)
+        var argv: [33]?[*:0]const u8 = .{null} ** 33;
+        for (arg_start..arg_end, 0..) |si, i| {
+            argv[i] = str_ptrs[si];
         }
 
-        // Convert env to null-terminated format
-        const envp = try self.allocator.allocSentinel(?[*:0]const u8, self.config.env.len, null);
-        defer self.allocator.free(envp);
-
-        for (self.config.env, 0..) |env_var, i| {
-            envp[i] = try self.allocator.dupeZ(u8, env_var);
+        // Build envp (null-terminated pointer array)
+        var envp: [33]?[*:0]const u8 = .{null} ** 33;
+        for (env_start..env_end, 0..) |si, i| {
+            envp[i] = str_ptrs[si];
         }
 
-        log.debug("Executing: {s}", .{self.config.args[0]});
+        if (argv[0] == null) {
+            _ = std.os.linux.syscall1(.exit_group, 1);
+            unreachable;
+        }
 
         // Execute
-        const err = std.posix.execvpeZ(argv[0].?, argv, envp);
-        log.err("execve failed: {s}", .{@errorName(err)});
-        return errors.Error.SystemError;
+        _ = std.os.linux.execve(
+            argv[0].?,
+            @ptrCast(&argv),
+            @ptrCast(&envp),
+        );
+
+        // execve failed
+        _ = std.os.linux.syscall1(.exit_group, 127);
+        unreachable;
     }
 
     fn addToCgroup(self: *Executor, pid: i32, cgroup_path: []const u8) !void {
@@ -566,12 +816,19 @@ pub const Executor = struct {
         var path_buf: [64]u8 = undefined;
         var content_buf: [64]u8 = undefined;
 
+        log.info("Writing ID maps for pid {d} (uid={d}, gid={d})", .{ pid, uid, gid });
+
         // Disable setgroups first (required for unprivileged user namespaces)
         const setgroups_path = std.fmt.bufPrint(&path_buf, "/proc/{d}/setgroups", .{pid}) catch return;
         if (std.fs.openFileAbsolute(setgroups_path, .{ .mode = .write_only })) |file| {
             defer file.close();
-            file.writeAll("deny") catch {};
-        } else |_| {}
+            file.writeAll("deny") catch |err| {
+                log.warn("Failed to write setgroups deny: {s}", .{@errorName(err)});
+            };
+            log.info("Wrote setgroups deny", .{});
+        } else |err| {
+            log.warn("Failed to open setgroups: {s}", .{@errorName(err)});
+        }
 
         // Write uid_map
         const uid_path = std.fmt.bufPrint(&path_buf, "/proc/{d}/uid_map", .{pid}) catch return;
@@ -579,9 +836,13 @@ pub const Executor = struct {
 
         if (std.fs.openFileAbsolute(uid_path, .{ .mode = .write_only })) |file| {
             defer file.close();
-            file.writeAll(uid_content) catch {};
-            log.debug("Wrote uid_map: {s}", .{uid_content});
-        } else |_| {}
+            file.writeAll(uid_content) catch |err| {
+                log.err("Failed to write uid_map: {s}", .{@errorName(err)});
+            };
+            log.info("Wrote uid_map: {s}", .{uid_content});
+        } else |err| {
+            log.err("Failed to open uid_map: {s}", .{@errorName(err)});
+        }
 
         // Write gid_map
         const gid_path = std.fmt.bufPrint(&path_buf, "/proc/{d}/gid_map", .{pid}) catch return;
@@ -589,9 +850,13 @@ pub const Executor = struct {
 
         if (std.fs.openFileAbsolute(gid_path, .{ .mode = .write_only })) |file| {
             defer file.close();
-            file.writeAll(gid_content) catch {};
-            log.debug("Wrote gid_map: {s}", .{gid_content});
-        } else |_| {}
+            file.writeAll(gid_content) catch |err| {
+                log.err("Failed to write gid_map: {s}", .{@errorName(err)});
+            };
+            log.info("Wrote gid_map: {s}", .{gid_content});
+        } else |err| {
+            log.err("Failed to open gid_map: {s}", .{@errorName(err)});
+        }
     }
 
     fn waitForChild(self: *Executor, pid: i32) !i32 {

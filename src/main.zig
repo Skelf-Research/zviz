@@ -43,7 +43,11 @@ pub fn main() void {
 
 fn run() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    defer {
+        if (@import("builtin").mode == .Debug) {
+            _ = gpa.deinit();
+        }
+    }
     const allocator = gpa.allocator();
 
     const args = try std.process.argsAlloc(allocator);
@@ -151,13 +155,6 @@ fn run() !void {
 }
 
 fn handleError(err: anyerror) void {
-    // Check if it's a ZViz error
-    if (@as(?errors.Error, @errorCast(err))) |zviz_err| {
-        log.err("{s}", .{errors.describe(zviz_err)});
-        std.process.exit(errors.toExitCode(zviz_err));
-    }
-
-    // Handle other errors
     log.err("Error: {s}", .{@errorName(err)});
     std.process.exit(errors.ExitCode.GENERAL_ERROR);
 }

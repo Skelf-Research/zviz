@@ -111,21 +111,28 @@ pub fn setStateDir(path: []const u8) void {
     custom_state_dir = path;
 }
 
+/// Static buffer for rootless state directory path
+var rootless_state_buf: [256]u8 = undefined;
+var rootless_state_len: usize = 0;
+
 /// Get the default state directory for rootless mode
-pub fn getRootlessStateDir(allocator: std.mem.Allocator) ![]const u8 {
+pub fn getRootlessStateDir(_: std.mem.Allocator) ![]const u8 {
     // Try XDG_RUNTIME_DIR first (e.g., /run/user/1000)
     if (std.posix.getenv("XDG_RUNTIME_DIR")) |runtime_dir| {
-        return std.fmt.allocPrint(allocator, "{s}/zviz", .{runtime_dir});
+        rootless_state_len = (std.fmt.bufPrint(&rootless_state_buf, "{s}/zviz", .{runtime_dir}) catch return error.PathTooLong).len;
+        return rootless_state_buf[0..rootless_state_len];
     }
 
     // Fall back to ~/.local/share/zviz/state
     if (std.posix.getenv("HOME")) |home| {
-        return std.fmt.allocPrint(allocator, "{s}/.local/share/zviz/state", .{home});
+        rootless_state_len = (std.fmt.bufPrint(&rootless_state_buf, "{s}/.local/share/zviz/state", .{home}) catch return error.PathTooLong).len;
+        return rootless_state_buf[0..rootless_state_len];
     }
 
     // Last resort: /tmp/zviz-<uid>
     const uid = std.os.linux.getuid();
-    return std.fmt.allocPrint(allocator, "/tmp/zviz-{d}", .{uid});
+    rootless_state_len = (std.fmt.bufPrint(&rootless_state_buf, "/tmp/zviz-{d}", .{uid}) catch return error.PathTooLong).len;
+    return rootless_state_buf[0..rootless_state_len];
 }
 
 /// ZViz annotation keys for pod configuration
@@ -236,16 +243,157 @@ pub const Container = struct {
         const content = file.readToEndAlloc(self.allocator, 10 * 1024 * 1024) catch {
             return errors.Error.ProfileParseError;
         };
-        defer self.allocator.free(content);
 
         if (content.len == 0) {
+            self.allocator.free(content);
             return errors.Error.ProfileParseError;
         }
 
         // Parse annotations from config.json
         self.parseAnnotations(content);
 
+        // Parse OCI config JSON into Config struct
+        self.parseConfig(content) catch |err| {
+            log.warn("Failed to parse config.json fields: {s}", .{@errorName(err)});
+            self.allocator.free(content);
+            return;
+        };
+
+        // Keep content alive since Config fields reference it
+        // (strings in parsed JSON point into this buffer)
+
         log.debug("Config loaded from {s} ({d} bytes)", .{ config_path, content.len });
+    }
+
+    /// Parse OCI config.json content into Config struct
+    fn parseConfig(self: *Container, content: []const u8) !void {
+        const parsed = std.json.parseFromSlice(std.json.Value, self.allocator, content, .{}) catch {
+            return errors.Error.ProfileParseError;
+        };
+        // Don't defer deinit - we need the strings to stay alive
+        const root_obj = parsed.value;
+
+        if (root_obj != .object) return errors.Error.ProfileParseError;
+
+        var config: Config = .{
+            .oci_version = "1.0.2",
+            .root = .{ .path = "rootfs" },
+        };
+
+        // Parse ociVersion
+        if (root_obj.object.get("ociVersion")) |v| {
+            if (v == .string) config.oci_version = v.string;
+        }
+
+        // Parse root
+        if (root_obj.object.get("root")) |root_val| {
+            if (root_val == .object) {
+                if (root_val.object.get("path")) |p| {
+                    if (p == .string) config.root.path = p.string;
+                }
+                if (root_val.object.get("readonly")) |r| {
+                    if (r == .bool) config.root.readonly = r.bool;
+                }
+            }
+        }
+
+        // Parse hostname
+        if (root_obj.object.get("hostname")) |h| {
+            if (h == .string) config.hostname = h.string;
+        }
+
+        // Parse process
+        if (root_obj.object.get("process")) |proc_val| {
+            if (proc_val == .object) {
+                var process: Config.Process = .{
+                    .args = &.{"/bin/sh"},
+                };
+
+                if (proc_val.object.get("terminal")) |t| {
+                    if (t == .bool) process.terminal = t.bool;
+                }
+
+                if (proc_val.object.get("cwd")) |c| {
+                    if (c == .string) process.cwd = c.string;
+                }
+
+                // Parse args
+                if (proc_val.object.get("args")) |args_val| {
+                    if (args_val == .array) {
+                        const args = try self.allocator.alloc([]const u8, args_val.array.items.len);
+                        for (args_val.array.items, 0..) |item, i| {
+                            if (item == .string) {
+                                args[i] = item.string;
+                            } else {
+                                args[i] = "";
+                            }
+                        }
+                        process.args = args;
+                    }
+                }
+
+                // Parse env
+                if (proc_val.object.get("env")) |env_val| {
+                    if (env_val == .array) {
+                        const env = try self.allocator.alloc([]const u8, env_val.array.items.len);
+                        for (env_val.array.items, 0..) |item, i| {
+                            if (item == .string) {
+                                env[i] = item.string;
+                            } else {
+                                env[i] = "";
+                            }
+                        }
+                        process.env = env;
+                    }
+                }
+
+                // Parse user
+                if (proc_val.object.get("user")) |user_val| {
+                    if (user_val == .object) {
+                        var user: Config.Process.User = .{};
+                        if (user_val.object.get("uid")) |u| {
+                            if (u == .integer) user.uid = @intCast(u.integer);
+                        }
+                        if (user_val.object.get("gid")) |g| {
+                            if (g == .integer) user.gid = @intCast(g.integer);
+                        }
+                        process.user = user;
+                    }
+                }
+
+                config.process = process;
+            }
+        }
+
+        // Parse linux namespaces
+        if (root_obj.object.get("linux")) |linux_val| {
+            if (linux_val == .object) {
+                var linux_config: Config.LinuxConfig = .{};
+
+                if (linux_val.object.get("namespaces")) |ns_val| {
+                    if (ns_val == .array) {
+                        const namespaces = try self.allocator.alloc(Config.LinuxConfig.Namespace, ns_val.array.items.len);
+                        for (ns_val.array.items, 0..) |item, i| {
+                            if (item == .object) {
+                                var ns: Config.LinuxConfig.Namespace = .{ .type = "pid" };
+                                if (item.object.get("type")) |t| {
+                                    if (t == .string) ns.type = t.string;
+                                }
+                                if (item.object.get("path")) |p| {
+                                    if (p == .string) ns.path = p.string;
+                                }
+                                namespaces[i] = ns;
+                            }
+                        }
+                        linux_config.namespaces = namespaces;
+                    }
+                }
+
+                config.linux = linux_config;
+            }
+        }
+
+        self.config = config;
     }
 
     /// Parse ZViz annotations from OCI config content
@@ -306,8 +454,8 @@ pub const Container = struct {
             }
         }
 
-        // 3. Default profile
-        self.profile = schema.defaultCiRunner();
+        // 3. Default profile (broad container profile for general workloads)
+        self.profile = schema.defaultContainer();
         log.debug("Using default profile: {s}", .{self.profile.?.name});
     }
 
@@ -422,12 +570,100 @@ pub const Container = struct {
         };
         defer allocator.free(content);
 
-        // TODO: Parse state JSON properly
-        // For now, just verify content exists and return placeholder
         if (content.len == 0) {
             return errors.Error.ContainerNotFound;
         }
-        return Container.init(allocator, id, "/unknown");
+
+        // Parse state JSON
+        const bundle_path = extractJsonString(content, "bundle") orelse "/unknown";
+        const status_str = extractJsonString(content, "status") orelse "creating";
+
+        var container = try Container.init(allocator, id, bundle_path);
+
+        // Set status from saved state
+        if (std.mem.eql(u8, status_str, "created")) {
+            container.status = .created;
+        } else if (std.mem.eql(u8, status_str, "running")) {
+            container.status = .running;
+        } else if (std.mem.eql(u8, status_str, "stopped")) {
+            container.status = .stopped;
+        } else {
+            container.status = .creating;
+        }
+
+        // Parse PID if present
+        if (extractJsonNumber(content, "pid")) |pid| {
+            container.pid = @intCast(pid);
+        }
+
+        log.debug("Loaded container {s} with status {s}", .{ id, status_str });
+        return container;
+    }
+
+    /// Extract a string value from JSON (simple parser)
+    fn extractJsonString(content: []const u8, key: []const u8) ?[]const u8 {
+        // Build search pattern: "key":
+        var pattern_buf: [128]u8 = undefined;
+        const pattern = std.fmt.bufPrint(&pattern_buf, "\"{s}\":", .{key}) catch return null;
+
+        const key_pos = std.mem.indexOf(u8, content, pattern) orelse return null;
+        var pos = key_pos + pattern.len;
+
+        // Skip whitespace
+        while (pos < content.len and (content[pos] == ' ' or content[pos] == '\t' or content[pos] == '\n')) {
+            pos += 1;
+        }
+
+        if (pos >= content.len or content[pos] != '"') {
+            return null;
+        }
+        pos += 1; // Skip opening quote
+
+        const value_begin = pos;
+        while (pos < content.len and content[pos] != '"') {
+            if (content[pos] == '\\' and pos + 1 < content.len) {
+                pos += 2;
+                continue;
+            }
+            pos += 1;
+        }
+
+        if (pos >= content.len) {
+            return null;
+        }
+
+        return content[value_begin..pos];
+    }
+
+    /// Extract a number value from JSON (simple parser)
+    fn extractJsonNumber(content: []const u8, key: []const u8) ?i64 {
+        var pattern_buf: [128]u8 = undefined;
+        const pattern = std.fmt.bufPrint(&pattern_buf, "\"{s}\":", .{key}) catch return null;
+
+        const key_pos = std.mem.indexOf(u8, content, pattern) orelse return null;
+        var pos = key_pos + pattern.len;
+
+        // Skip whitespace
+        while (pos < content.len and (content[pos] == ' ' or content[pos] == '\t' or content[pos] == '\n')) {
+            pos += 1;
+        }
+
+        if (pos >= content.len) return null;
+
+        // Check for null
+        if (pos + 4 <= content.len and std.mem.eql(u8, content[pos .. pos + 4], "null")) {
+            return null;
+        }
+
+        // Find end of number
+        const num_start = pos;
+        while (pos < content.len and (content[pos] >= '0' and content[pos] <= '9' or content[pos] == '-')) {
+            pos += 1;
+        }
+
+        if (pos == num_start) return null;
+
+        return std.fmt.parseInt(i64, content[num_start..pos], 10) catch null;
     }
 
     /// Delete state from disk
@@ -441,10 +677,13 @@ pub const Container = struct {
 
 /// Create a new container
 pub fn create(allocator: std.mem.Allocator, args: []const []const u8) !void {
-    // Parse arguments: create [--console-socket <path>] [--bundle <path>] [--pid-file <path>] <container-id>
+    // Parse arguments: create [options] <container-id> [<bundle>]
+    // Positional: first = container-id, second = bundle path
+    // Flags: --bundle <path>, --console-socket <path>, --pid-file <path>
     var container_id: ?[]const u8 = null;
     var bundle_path: []const u8 = ".";
     var console_socket: ?[]const u8 = null;
+    var bundle_from_flag = false;
 
     var i: usize = 0;
     while (i < args.len) : (i += 1) {
@@ -456,13 +695,19 @@ pub fn create(allocator: std.mem.Allocator, args: []const []const u8) !void {
         } else if (std.mem.eql(u8, args[i], "--bundle") or std.mem.eql(u8, args[i], "-b")) {
             if (i + 1 < args.len) {
                 bundle_path = args[i + 1];
+                bundle_from_flag = true;
                 i += 1;
             }
         } else if (std.mem.eql(u8, args[i], "--pid-file")) {
             // Skip pid-file for now
             if (i + 1 < args.len) i += 1;
         } else if (!std.mem.startsWith(u8, args[i], "-")) {
-            container_id = args[i];
+            if (container_id == null) {
+                container_id = args[i];
+            } else if (!bundle_from_flag) {
+                // Second positional arg is bundle path
+                bundle_path = args[i];
+            }
         }
     }
 
@@ -521,6 +766,21 @@ pub fn start(allocator: std.mem.Allocator, args: []const []const u8) !void {
         return errors.Error.ContainerNotRunning;
     }
 
+    // Reload config.json from bundle (loadState only loads minimal state)
+    container.loadConfig() catch |err| {
+        log.warn("Failed to reload config.json: {s}", .{@errorName(err)});
+    };
+
+    // Load profile for security settings
+    container.loadProfile(null) catch |err| {
+        log.warn("Failed to load profile: {s}", .{@errorName(err)});
+    };
+
+    // Reinitialize cgroup manager for the existing container
+    container.setupCgroups() catch |err| {
+        log.warn("Failed to setup cgroups: {s}", .{@errorName(err)});
+    };
+
     // Build rootfs path
     var rootfs_buf: [std.fs.max_path_bytes]u8 = undefined;
     const rootfs = std.fmt.bufPrint(&rootfs_buf, "{s}/rootfs", .{container.bundle}) catch {
@@ -538,20 +798,29 @@ pub fn start(allocator: std.mem.Allocator, args: []const []const u8) !void {
         break :blk "/";
     } else "/";
 
+    const env: []const []const u8 = if (container.config) |cfg| blk: {
+        if (cfg.process) |proc| {
+            if (proc.env) |e| break :blk e;
+        }
+        break :blk &.{};
+    } else &.{};
+
     const terminal = if (container.config) |cfg| blk: {
         if (cfg.process) |proc| break :blk proc.terminal;
         break :blk false;
     } else false;
 
     // Build seccomp policy from profile
-    var seccomp_policy: ?seccomp.SyscallPolicy = null;
-    if (container.profile) |profile| {
-        seccomp_policy = seccomp.SyscallPolicy{
-            .allow = profile.syscalls.allow,
-            .deny = profile.syscalls.deny,
-            .broker = profile.syscalls.broker,
-        };
-    }
+    const seccomp_policy: ?seccomp.SyscallPolicy = if (container.profile) |profile| blk: {
+        if (profile.syscalls.allow.len > 0 or profile.syscalls.deny.len > 0) {
+            break :blk seccomp.SyscallPolicy{
+                .allow = profile.syscalls.allow,
+                .deny = profile.syscalls.deny,
+                .broker = profile.syscalls.broker,
+            };
+        }
+        break :blk null;
+    } else null;
 
     // Get cgroup path
     var cgroup_path: ?[]const u8 = null;
@@ -559,17 +828,21 @@ pub fn start(allocator: std.mem.Allocator, args: []const []const u8) !void {
         cgroup_path = cgm.cgroup_path;
     }
 
+    // Get hostname from config (with fallback)
+    const hostname: ?[]const u8 = if (container.config) |cfg| cfg.hostname else null;
+
     // Build executor config
     const exec_config = executor.ExecConfig{
         .container_id = container_id,
         .rootfs = rootfs,
         .args = process_args,
+        .env = env,
         .cwd = cwd,
         .terminal = terminal,
         .console_socket = container.console_socket,
         .seccomp_policy = seccomp_policy,
         .cgroup_path = cgroup_path,
-        .hostname = container.config.?.hostname,
+        .hostname = hostname,
     };
 
     // Create and run executor
@@ -749,16 +1022,40 @@ fn parseSignal(name: []const u8) i32 {
 
 /// Run a container (create + start in one step)
 pub fn run(allocator: std.mem.Allocator, args: []const []const u8) !void {
-    if (args.len < 2) {
-        log.err("Usage: zviz run <container-id> <bundle>", .{});
+    if (args.len < 1) {
+        log.err("Usage: zviz run <container-id> [<bundle>]", .{});
         return errors.Error.InvalidBundlePath;
+    }
+
+    // Parse to find container ID (first positional arg)
+    var container_id: ?[]const u8 = null;
+    var i: usize = 0;
+    while (i < args.len) : (i += 1) {
+        if (std.mem.eql(u8, args[i], "--bundle") or std.mem.eql(u8, args[i], "-b")) {
+            if (i + 1 < args.len) i += 1; // Skip bundle path
+        } else if (std.mem.eql(u8, args[i], "--console-socket") or std.mem.eql(u8, args[i], "-c")) {
+            if (i + 1 < args.len) i += 1; // Skip socket path
+        } else if (std.mem.eql(u8, args[i], "--pid-file")) {
+            if (i + 1 < args.len) i += 1; // Skip pid file path
+        } else if (!std.mem.startsWith(u8, args[i], "-")) {
+            if (container_id == null) {
+                container_id = args[i];
+            }
+            // Second positional arg (bundle) is handled by create()
+        }
+    }
+
+    if (container_id == null) {
+        log.err("Usage: zviz run <container-id> [<bundle>]", .{});
+        return errors.Error.InvalidContainerId;
     }
 
     // First create
     try create(allocator, args);
 
-    // Then start
-    try start(allocator, args[0..1]);
+    // Then start with just the container ID
+    const start_args = [_][]const u8{container_id.?};
+    try start(allocator, &start_args);
 }
 
 /// List all containers

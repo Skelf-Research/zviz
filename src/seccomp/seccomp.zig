@@ -177,6 +177,14 @@ const BpfBuilder = struct {
     }
 };
 
+/// Socket domain constants for BPF filtering
+const AF_UNIX: u32 = 1;
+const AF_INET: u32 = 2;
+const AF_INET6: u32 = 10;
+
+/// Number of additional BPF instructions for socket domain filtering
+const SOCKET_FILTER_INSNS: usize = 5;
+
 /// Generate BPF program from syscall policy
 pub fn generateBpf(allocator: std.mem.Allocator, policy: SyscallPolicy) ![]BpfInsn {
     log.debug("Generating BPF: {d} allow, {d} deny, {d} broker", .{
@@ -188,70 +196,73 @@ pub fn generateBpf(allocator: std.mem.Allocator, policy: SyscallPolicy) ![]BpfIn
     var builder = BpfBuilder.init(allocator);
     errdefer builder.deinit();
 
-    // Calculate jump offsets for the end returns
     // Structure:
     // [0] Load arch
     // [1] Check arch, fail if not x86_64
     // [2] Load syscall nr
-    // [3..3+allow.len] Check allow list
-    // [3+allow.len..3+allow.len+deny.len] Check deny list
-    // [3+allow.len+deny.len..3+allow.len+deny.len+broker.len] Check broker list
-    // [end-3] RET ALLOW (for allow matches)
-    // [end-2] RET USER_NOTIF (for broker matches)
-    // [end-1] RET ERRNO (for deny/default)
+    // [3..3+allow] Check allow list → jump to RET ALLOW
+    // [3+allow..3+allow+deny] Check deny list → jump to RET ERRNO
+    // [3+allow+deny..3+allow+deny+broker] Check broker list → jump to RET USER_NOTIF
+    // [socket filter: 5 insns] Check socket domain args
+    // RET ERRNO (default deny / denied domains)
+    // RET ALLOW (allowed syscalls / allowed domains)
+    // RET USER_NOTIF (broker)
+    // RET KILL (arch mismatch)
 
     const allow_count = policy.allow.len;
     const deny_count = policy.deny.len;
     const broker_count = policy.broker.len;
+    const total_checks = allow_count + deny_count + broker_count;
+
+    // Extra offset for the socket filter section between checks and returns
+    const sf: u8 = SOCKET_FILTER_INSNS;
 
     // Load architecture
     try builder.ldAbsW(BPF.OFFSET_ARCH);
 
     // Check architecture (kill if not x86_64)
-    // If not equal, jump to kill; otherwise continue
-    const total_checks = allow_count + deny_count + broker_count;
-    const kill_offset: u8 = @intCast(1 + total_checks + 3); // Skip all checks + 3 return instructions
+    const kill_offset: u8 = @intCast(1 + total_checks + sf + 3); // All checks + socket filter + 3 returns before KILL
     try builder.jeqK(BPF.AUDIT_ARCH_X86_64, 0, kill_offset);
 
     // Load syscall number
     try builder.ldAbsW(BPF.OFFSET_NR);
 
-    // Generate allow list checks
-    // For each syscall in allow list: if match, jump to RET ALLOW
+    // Generate allow list checks: if match, jump to RET ALLOW
     for (policy.allow, 0..) |syscall_nr, i| {
-        const remaining = total_checks - i - 1;
-        const allow_ret_offset: u8 = @intCast(remaining + 1); // Jump to RET ALLOW
+        const remaining: u8 = @intCast(total_checks - i - 1);
+        const allow_ret_offset: u8 = remaining + sf + 1; // Past remaining checks + socket filter + RET ERRNO
         try builder.jeqK(@intCast(syscall_nr), allow_ret_offset, 0);
     }
 
-    // Generate deny list checks
-    // For each syscall in deny list: if match, jump to RET ERRNO
+    // Generate deny list checks: if match, jump to RET ERRNO
     for (policy.deny, 0..) |syscall_nr, i| {
-        const remaining = total_checks - allow_count - i - 1;
-        const deny_ret_offset: u8 = @intCast(remaining + 3); // Jump to RET ERRNO (past ALLOW and USER_NOTIF)
+        const remaining: u8 = @intCast(total_checks - allow_count - i - 1);
+        const deny_ret_offset: u8 = remaining + sf; // Past remaining checks + socket filter to RET ERRNO
         try builder.jeqK(@intCast(syscall_nr), deny_ret_offset, 0);
     }
 
-    // Generate broker list checks
-    // For each syscall in broker list: if match, jump to RET USER_NOTIF
+    // Generate broker list checks: if match, jump to RET USER_NOTIF
     for (policy.broker, 0..) |syscall_nr, i| {
-        const remaining = total_checks - allow_count - deny_count - i - 1;
-        const broker_ret_offset: u8 = @intCast(remaining + 2); // Jump to RET USER_NOTIF (past ALLOW)
+        const remaining: u8 = @intCast(total_checks - allow_count - deny_count - i - 1);
+        const broker_ret_offset: u8 = remaining + sf + 2; // Past socket filter + ERRNO + ALLOW
         try builder.jeqK(@intCast(syscall_nr), broker_ret_offset, 0);
     }
 
-    // Return instructions at the end
-    // RET ALLOW
-    try builder.retK(@intFromEnum(Action.allow));
+    // Socket domain filter section (5 instructions)
+    // At this point, A register still has the syscall number.
+    // Check if it's socket (41). If yes, filter by domain. If no, deny.
+    try builder.jeqK(41, 0, 4); // JEQ socket: if match continue, else skip 4 to RET ERRNO
+    try builder.ldAbsW(BPF.OFFSET_ARGS); // Load args[0] low 32 bits = domain
+    try builder.jeqK(AF_UNIX, 3, 0); // AF_UNIX → skip 3 to RET ALLOW
+    try builder.jeqK(AF_INET, 2, 0); // AF_INET → skip 2 to RET ALLOW
+    try builder.jeqK(AF_INET6, 1, 0); // AF_INET6 → skip 1 to RET ALLOW
+    // Fall through: denied domain → RET ERRNO
 
-    // RET USER_NOTIF
-    try builder.retK(@intFromEnum(Action.user_notif));
-
-    // RET ERRNO (EPERM = 1) - default for unmatched and denied
-    try builder.retK(Action.withErrno(1));
-
-    // RET KILL (for architecture mismatch)
-    try builder.retK(@intFromEnum(Action.kill_process));
+    // Return instructions
+    try builder.retK(Action.withErrno(1)); // RET ERRNO (default deny + denied socket domains)
+    try builder.retK(@intFromEnum(Action.allow)); // RET ALLOW (allowed syscalls + allowed socket domains)
+    try builder.retK(@intFromEnum(Action.user_notif)); // RET USER_NOTIF (broker)
+    try builder.retK(@intFromEnum(Action.kill_process)); // RET KILL (arch mismatch)
 
     return builder.toOwnedSlice();
 }

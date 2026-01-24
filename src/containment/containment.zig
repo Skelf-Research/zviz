@@ -153,20 +153,20 @@ pub fn dropCapabilities(keep: []const Capability) !void {
     var effective: u64 = 0;
 
     for (keep) |cap| {
-        const bit: u64 = @as(u64, 1) << @intFromEnum(cap);
+        const bit: u64 = @as(u64, 1) << @as(u6, @intCast(@intFromEnum(cap)));
         inheritable |= bit;
         permitted |= bit;
         effective |= bit;
     }
 
     // Use prctl to drop bounding set capabilities
-    const CAP_LAST_CAP = 40; // Current max capability
+    const CAP_LAST_CAP: u8 = 40; // Current max capability
     var cap: u8 = 0;
     while (cap <= CAP_LAST_CAP) : (cap += 1) {
-        const bit: u64 = @as(u64, 1) << cap;
+        const bit: u64 = @as(u64, 1) << @as(u6, @intCast(cap));
         if (permitted & bit == 0) {
             // Drop from bounding set
-            const result = std.os.linux.prctl(.CAPBSET_DROP, cap, 0, 0, 0);
+            const result = std.os.linux.prctl(@intFromEnum(std.os.linux.PR.CAPBSET_DROP), cap, 0, 0, 0);
             if (result != 0 and result != @as(usize, @bitCast(@as(isize, -22)))) { // EINVAL means already dropped
                 log.debug("Failed to drop cap {d}: {d}", .{ cap, result });
             }
