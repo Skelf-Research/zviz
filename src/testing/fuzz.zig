@@ -38,7 +38,7 @@ pub fn fuzzBpfGeneration(allocator: std.mem.Allocator, seed: u64) !void {
     };
 
     // Generate BPF - should not crash
-    const bpf = seccomp.generateBpf(allocator, policy) catch |err| {
+    const bpf = seccomp.generateBpf(allocator, policy, false) catch |err| {
         // Expected errors are OK
         switch (err) {
             error.OutOfMemory => return,
@@ -265,7 +265,7 @@ pub fn stressBpfGeneration(allocator: std.mem.Allocator, iterations: usize) !voi
 
     var i: usize = 0;
     while (i < iterations) : (i += 1) {
-        const bpf = try seccomp.generateBpf(allocator, policy);
+        const bpf = try seccomp.generateBpf(allocator, policy, false);
         defer allocator.free(bpf);
 
         // Quick validation
@@ -353,7 +353,7 @@ test "validate bpf program" {
         .deny = &.{56},
         .broker = &.{257},
     };
-    const bpf = try seccomp.generateBpf(std.testing.allocator, policy);
+    const bpf = try seccomp.generateBpf(std.testing.allocator, policy, false);
     defer std.testing.allocator.free(bpf);
 
     try validateBpfProgram(bpf);

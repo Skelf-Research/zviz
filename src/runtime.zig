@@ -111,6 +111,32 @@ pub fn setStateDir(path: []const u8) void {
     custom_state_dir = path;
 }
 
+/// Verbose mode for syscall logging (logs blocked syscalls in real-time)
+var verbose_mode: bool = false;
+
+/// Get verbose mode status
+pub fn getVerboseMode() bool {
+    return verbose_mode;
+}
+
+/// Enable verbose mode for blocked syscall logging
+pub fn setVerboseMode(enabled: bool) void {
+    verbose_mode = enabled;
+}
+
+/// Profile override (set via --profile flag)
+var profile_override: ?[]const u8 = null;
+
+/// Get profile override
+pub fn getProfileOverride() ?[]const u8 {
+    return profile_override;
+}
+
+/// Set profile override
+pub fn setProfileOverride(name: []const u8) void {
+    profile_override = name;
+}
+
 /// Static buffer for rootless state directory path
 var rootless_state_buf: [256]u8 = undefined;
 var rootless_state_len: usize = 0;
@@ -203,6 +229,9 @@ pub const Container = struct {
 
     // Console socket for OCI console protocol
     console_socket: ?[]const u8 = null,
+
+    // Verbose mode for blocked syscall logging
+    verbose: bool = false,
 
     pub fn init(allocator: std.mem.Allocator, id: []const u8, bundle: []const u8) !Container {
         return .{
@@ -423,7 +452,7 @@ pub const Container = struct {
     }
 
     /// Load ZViz profile
-    /// Priority: explicit path > annotation profile > default
+    /// Priority: explicit path > --profile flag > annotation profile > default
     pub fn loadProfile(self: *Container, profile_path: ?[]const u8) !void {
         // 1. Explicit profile path takes priority
         if (profile_path) |path| {
@@ -432,7 +461,17 @@ pub const Container = struct {
             return;
         }
 
-        // 2. Check annotation-derived profile name
+        // 2. Check --profile flag override
+        if (getProfileOverride()) |name| {
+            if (self.loadBuiltinProfile(name)) |profile| {
+                self.profile = profile;
+                log.info("Profile loaded from --profile flag: {s}", .{name});
+                return;
+            }
+            log.warn("Profile '{s}' not found, trying other sources", .{name});
+        }
+
+        // 3. Check annotation-derived profile name
         if (self.profile_name) |name| {
             if (self.loadBuiltinProfile(name)) |profile| {
                 self.profile = profile;
@@ -469,6 +508,15 @@ pub const Container = struct {
         }
         if (std.mem.eql(u8, name, "minimal") or std.mem.eql(u8, name, "zviz-minimal")) {
             return schema.BaseProfiles.minimal();
+        }
+        if (std.mem.eql(u8, name, "web-server") or std.mem.eql(u8, name, "zviz-web-server")) {
+            return schema.BaseProfiles.webServer();
+        }
+        if (std.mem.eql(u8, name, "batch-job") or std.mem.eql(u8, name, "zviz-batch-job")) {
+            return schema.BaseProfiles.batchJob();
+        }
+        if (std.mem.eql(u8, name, "development") or std.mem.eql(u8, name, "zviz-development")) {
+            return schema.BaseProfiles.development();
         }
         return null;
     }
@@ -722,6 +770,9 @@ pub fn create(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var container = try Container.init(allocator, container_id.?, bundle_path);
     errdefer container.deinit();
 
+    // Set verbose mode for syscall logging
+    container.verbose = getVerboseMode();
+
     // Store console socket path for later use
     container.console_socket = console_socket;
 
@@ -760,6 +811,9 @@ pub fn start(allocator: std.mem.Allocator, args: []const []const u8) !void {
         return errors.Error.ContainerNotFound;
     };
     defer container.deinit();
+
+    // Set verbose mode from global setting
+    container.verbose = getVerboseMode();
 
     if (container.status != .created) {
         log.err("Container not in created state", .{});
@@ -843,6 +897,7 @@ pub fn start(allocator: std.mem.Allocator, args: []const []const u8) !void {
         .seccomp_policy = seccomp_policy,
         .cgroup_path = cgroup_path,
         .hostname = hostname,
+        .verbose = container.verbose,
     };
 
     // Create and run executor

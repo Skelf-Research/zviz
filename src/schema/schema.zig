@@ -563,6 +563,74 @@ pub const BaseProfiles = struct {
         profile.resources.pids_max = 128;
         return profile;
     }
+
+    /// Web server profile - optimized for HTTP servers and API services
+    pub fn webServer() Profile {
+        return .{
+            .name = "zviz-web-server",
+            .version = "0.1",
+            .mode = .high_density,
+            .description = "Profile for HTTP servers and API services",
+            .syscalls = .{
+                .allow = &web_server_allow_list,
+                .deny = &web_server_deny_list,
+                .broker = &.{ 257, 41, 59 }, // openat, socket, execve
+            },
+            .network = .{
+                .mode = .allow_cidr,
+                .allow_cidrs = &.{ "0.0.0.0/0", "::/0" }, // Allow all outbound
+            },
+            .resources = .{
+                .memory_max = "1G",
+                .pids_max = 256,
+            },
+        };
+    }
+
+    /// Batch job profile - for data processing, ETL, and cron jobs
+    pub fn batchJob() Profile {
+        return .{
+            .name = "zviz-batch-job",
+            .version = "0.1",
+            .mode = .high_density,
+            .description = "Profile for batch processing and data jobs",
+            .syscalls = .{
+                .allow = &batch_job_allow_list,
+                .deny = &batch_job_deny_list,
+                .broker = &.{ 257, 59 }, // openat, execve (no socket)
+            },
+            .network = .{
+                .mode = .deny_all, // No network by default for batch jobs
+            },
+            .resources = .{
+                .memory_max = "8G", // Higher memory for data processing
+                .pids_max = 64,
+            },
+        };
+    }
+
+    /// Development profile - permissive for debugging (NOT for production)
+    pub fn development() Profile {
+        return .{
+            .name = "zviz-development",
+            .version = "0.1",
+            .mode = .high_density,
+            .description = "Permissive profile for development/debugging - NOT FOR PRODUCTION",
+            .syscalls = .{
+                .allow = &development_allow_list,
+                .deny = &development_deny_list, // Only the most dangerous
+                .broker = &.{ 257, 59 }, // openat, execve
+            },
+            .network = .{
+                .mode = .allow_cidr,
+                .allow_cidrs = &.{ "0.0.0.0/0", "::/0" },
+            },
+            .resources = .{
+                .memory_max = "4G",
+                .pids_max = 512,
+            },
+        };
+    }
 };
 
 /// Default container profile with comprehensive syscall allow list.
@@ -582,7 +650,7 @@ pub fn defaultContainer() Profile {
 }
 
 /// Comprehensive allow list for container workloads
-const container_allow_list: [90]i32 = .{
+const container_allow_list = [_]i32{
     // File I/O
     0, // read
     1, // write
@@ -622,6 +690,7 @@ const container_allow_list: [90]i32 = .{
     28, // madvise
     // Process
     39, // getpid
+    56, // clone (limited by namespaces, needed for threads)
     57, // fork (limited by namespaces)
     59, // execve
     60, // exit
@@ -634,6 +703,7 @@ const container_allow_list: [90]i32 = .{
     110, // getppid
     111, // getpgrp
     112, // setsid
+    135, // personality (glibc probes this, harmless without CAP_SYS_ADMIN)
     158, // arch_prctl
     186, // gettid
     200, // tkill
@@ -641,6 +711,14 @@ const container_allow_list: [90]i32 = .{
     231, // exit_group
     247, // waitid
     273, // set_robust_list
+    435, // clone3 (modern clone, limited by namespaces)
+    // Scheduling (constrained by cgroups)
+    24, // sched_yield
+    203, // sched_setaffinity (constrained by cgroups)
+    204, // sched_getaffinity
+    309, // getcpu
+    // Resource limits (reading is safe, setting constrained by parent)
+    97, // getrlimit
     // Signals
     13, // rt_sigaction
     14, // rt_sigprocmask
@@ -709,6 +787,151 @@ const container_deny_list: [22]i32 = .{
     173, // ioperm
     248, // add_key
     249, // request_key
+};
+
+// ============================================================================
+// Web Server Profile Syscalls
+// ============================================================================
+
+/// Syscalls allowed for web servers (includes networking)
+const web_server_allow_list = [_]i32{
+    // File I/O
+    0, 1, 2, 3, 4, 5, 6, 7, 8, // read, write, open, close, stat, fstat, lstat, poll, lseek
+    17, 18, 19, 20, 21, // pread64, pwrite64, readv, writev, access
+    72, 77, 78, 79, 80, // fcntl, ftruncate, getdents, getcwd, chdir
+    82, 83, 84, 87, 89, // rename, mkdir, rmdir, unlink, readlink
+    133, 257, 262, 263, 264, // mknod, openat, newfstatat, unlinkat, renameat
+    // Memory
+    9, 10, 11, 12, 25, 26, 27, 28, // mmap, mprotect, munmap, brk, mremap, msync, mincore, madvise
+    // Process
+    39, 102, 104, 110, 111, 157, 186, // getpid, getuid, getgid, getppid, getpgrp, prctl, gettid
+    158, 218, 228, 229, 230, // arch_prctl, set_tid_address, clock_gettime, clock_getres, clock_nanosleep
+    // Signals
+    13, 14, 127, 128, 129, 130, 131, // rt_sigaction, rt_sigprocmask, rt_sigpending, rt_sigtimedwait, rt_sigqueueinfo, rt_sigsuspend, sigaltstack
+    // Network (essential for web servers)
+    41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, // socket, connect, accept, sendto, recvfrom, sendmsg, recvmsg, shutdown, bind, listen, getsockname
+    52, 53, 54, 55, // getpeername, socketpair, setsockopt, getsockopt
+    232, 233, 288, 291, // epoll_wait, epoll_ctl, accept4, epoll_pwait
+    // Misc
+    60, 61, 62, 231, 202, 35, // exit, exit_group, kill, exit_group, futex, nanosleep
+};
+
+/// Syscalls denied for web servers
+const web_server_deny_list = [_]i32{
+    101, // ptrace
+    165, // mount
+    166, // umount2
+    155, // pivot_root
+    175, // init_module
+    176, // delete_module
+    313, // finit_module
+    169, // reboot
+    246, // kexec_load
+    298, // perf_event_open
+    321, // bpf
+    323, // userfaultfd
+    167, // swapon
+    168, // swapoff
+    172, // iopl
+    173, // ioperm
+    248, // add_key
+    249, // request_key
+};
+
+// ============================================================================
+// Batch Job Profile Syscalls
+// ============================================================================
+
+/// Syscalls allowed for batch jobs (file I/O heavy, no network)
+const batch_job_allow_list = [_]i32{
+    // File I/O (comprehensive)
+    0, 1, 2, 3, 4, 5, 6, 7, 8, // read, write, open, close, stat, fstat, lstat, poll, lseek
+    17, 18, 19, 20, 21, // pread64, pwrite64, readv, writev, access
+    72, 77, 78, 79, 80, // fcntl, ftruncate, getdents, getcwd, chdir
+    82, 83, 84, 87, 89, // rename, mkdir, rmdir, unlink, readlink
+    133, 257, 262, 263, 264, // mknod, openat, newfstatat, unlinkat, renameat
+    269, 270, 265, 266, // faccessat, preadv, linkat, symlinkat
+    // Memory
+    9, 10, 11, 12, 25, 26, 27, 28, // mmap, mprotect, munmap, brk, mremap, msync, mincore, madvise
+    // Process
+    39, 102, 104, 110, 111, 157, 186, // getpid, getuid, getgid, getppid, getpgrp, prctl, gettid
+    158, 218, 228, 229, 230, // arch_prctl, set_tid_address, clock_gettime, clock_getres, clock_nanosleep
+    // Signals
+    13, 14, 127, 128, 129, 130, 131, // rt_sigaction, rt_sigprocmask, rt_sigpending, rt_sigtimedwait, rt_sigqueueinfo, rt_sigsuspend, sigaltstack
+    // Fork/exec for spawning subprocesses
+    56, 57, 59, 61, // clone, fork, execve, wait4
+    // Misc
+    60, 202, 35, // exit, futex, nanosleep
+};
+
+/// Syscalls denied for batch jobs (includes network)
+const batch_job_deny_list = [_]i32{
+    41, // socket - no network for batch jobs
+    101, // ptrace
+    165, // mount
+    166, // umount2
+    155, // pivot_root
+    175, // init_module
+    176, // delete_module
+    313, // finit_module
+    169, // reboot
+    246, // kexec_load
+    298, // perf_event_open
+    321, // bpf
+    323, // userfaultfd
+    167, // swapon
+    168, // swapoff
+    172, // iopl
+    173, // ioperm
+    248, // add_key
+    249, // request_key
+    272, // unshare
+    308, // setns
+};
+
+// ============================================================================
+// Development Profile Syscalls
+// ============================================================================
+
+/// Syscalls allowed for development (permissive, includes ptrace for debugging)
+const development_allow_list = [_]i32{
+    // File I/O
+    0, 1, 2, 3, 4, 5, 6, 7, 8, // read, write, open, close, stat, fstat, lstat, poll, lseek
+    17, 18, 19, 20, 21, // pread64, pwrite64, readv, writev, access
+    72, 77, 78, 79, 80, // fcntl, ftruncate, getdents, getcwd, chdir
+    82, 83, 84, 87, 89, // rename, mkdir, rmdir, unlink, readlink
+    133, 257, 262, 263, 264, // mknod, openat, newfstatat, unlinkat, renameat
+    // Memory
+    9, 10, 11, 12, 25, 26, 27, 28, // mmap, mprotect, munmap, brk, mremap, msync, mincore, madvise
+    // Process
+    39, 102, 104, 110, 111, 157, 186, // getpid, getuid, getgid, getppid, getpgrp, prctl, gettid
+    158, 218, 228, 229, 230, // arch_prctl, set_tid_address, clock_gettime, clock_getres, clock_nanosleep
+    // Signals
+    13, 14, 127, 128, 129, 130, 131, // rt_sigaction, rt_sigprocmask, rt_sigpending, rt_sigtimedwait, rt_sigqueueinfo, rt_sigsuspend, sigaltstack
+    // Network
+    41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, // socket, connect, accept, sendto, recvfrom, sendmsg, recvmsg, shutdown, bind, listen, getsockname
+    52, 53, 54, 55, // getpeername, socketpair, setsockopt, getsockopt
+    232, 233, 288, 291, // epoll_wait, epoll_ctl, accept4, epoll_pwait
+    // Fork/exec
+    56, 57, 59, 61, // clone, fork, execve, wait4
+    // Debugging (allowed in development)
+    101, // ptrace - allowed for strace, gdb, etc.
+    // Misc
+    60, 62, 202, 35, // exit, kill, futex, nanosleep
+};
+
+/// Syscalls denied for development (only the most dangerous kernel operations)
+const development_deny_list = [_]i32{
+    175, // init_module - kernel module loading
+    176, // delete_module
+    313, // finit_module
+    169, // reboot
+    246, // kexec_load - kernel replacement
+    321, // bpf - eBPF programs
+    172, // iopl - I/O privilege level
+    173, // ioperm - I/O port permissions
+    167, // swapon
+    168, // swapoff
 };
 
 test "default profile validation" {

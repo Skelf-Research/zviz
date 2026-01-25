@@ -61,6 +61,8 @@ fn run() !void {
     // Parse global options before the command
     var arg_index: usize = 1;
     var custom_root: ?[]const u8 = null;
+    var verbose_mode: bool = false;
+    var profile_name: ?[]const u8 = null;
 
     while (arg_index < args.len) {
         const arg = args[arg_index];
@@ -75,10 +77,36 @@ fn run() !void {
         } else if (std.mem.startsWith(u8, arg, "--root=")) {
             custom_root = arg[7..];
             arg_index += 1;
+        } else if (std.mem.eql(u8, arg, "--verbose") or std.mem.eql(u8, arg, "-v")) {
+            verbose_mode = true;
+            arg_index += 1;
+        } else if (std.mem.eql(u8, arg, "--profile")) {
+            if (arg_index + 1 < args.len) {
+                profile_name = args[arg_index + 1];
+                arg_index += 2;
+            } else {
+                log.err("--profile requires a profile name", .{});
+                std.process.exit(1);
+            }
+        } else if (std.mem.startsWith(u8, arg, "--profile=")) {
+            profile_name = arg[10..];
+            arg_index += 1;
         } else {
             // First non-option is the command
             break;
         }
+    }
+
+    // Set verbose mode for syscall logging
+    if (verbose_mode) {
+        runtime.setVerboseMode(true);
+        log.info("Verbose mode enabled - blocked syscalls will be logged", .{});
+    }
+
+    // Set profile override
+    if (profile_name) |name| {
+        runtime.setProfileOverride(name);
+        log.info("Profile override: {s}", .{name});
     }
 
     // Set up state directory
@@ -359,6 +387,25 @@ fn printUsage() !void {
         \\Other:
         \\  version                          Print version info
         \\  help                             Show this help
+        \\
+        \\Global Options:
+        \\  --root <path>                    Set state directory (default: /run/zviz)
+        \\  --verbose, -v                    Enable verbose mode - logs blocked syscalls
+        \\  --profile <name>                 Use a specific security profile
+        \\
+        \\Built-in Profiles:
+        \\  ci-runner       CI/CD workloads (default for most use cases)
+        \\  web-server      HTTP servers and API services
+        \\  batch-job       Data processing (no network, high memory)
+        \\  development     Debugging (allows ptrace - NOT for production)
+        \\  hostile-tenant  Maximum security for untrusted code
+        \\  minimal         Minimal syscalls only
+        \\
+        \\Examples:
+        \\  zviz run mycontainer /path/to/bundle
+        \\  zviz --verbose run mycontainer /path/to/bundle
+        \\  zviz --profile=web-server run myapi /path/to/bundle
+        \\  zviz --profile=development --verbose run debug-container /path/to/bundle
         \\
         \\See docs/roadmap.md for implementation status.
         \\

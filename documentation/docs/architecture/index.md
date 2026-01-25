@@ -4,23 +4,29 @@ ZViz is a container isolation runtime that achieves gVisor-equivalent security o
 
 ## Design Philosophy
 
-### Core Thesis
+### The Problem
 
-gVisor's security comes from syscall interposition via a userspace kernel. ZViz reaches the same policy outcomes without emulating Linux by:
+You need to run code you can't trust: AI agents, CI/CD pipelines, third-party plugins, multi-tenant workloads. Traditional containers (runc) share the kernel attack surface with the host. gVisor solves this with a userspace kernel, but at significant performance cost.
 
-1. **Composing kernel primitives** — Namespaces, seccomp, LSMs, cgroups
-2. **Brokering only when necessary** — Syscalls needing argument inspection
-3. **Profile-driven enforcement** — Compile-time policy generation
+### The Solution
+
+ZViz reaches the same security outcomes without emulating Linux by:
+
+1. **Composing kernel primitives** - Namespaces, seccomp, LSMs, cgroups
+2. **Brokering only when necessary** - Syscalls needing argument inspection
+3. **Profile-driven enforcement** - Workload-specific policies
 
 ### Trade-offs
 
 | Aspect | gVisor | ZViz |
-|--------|--------|--------|
+|--------|--------|------|
 | Kernel exposure | Minimal (sentry) | Controlled (filtered) |
 | Syscall overhead | High (all syscalls) | Low (brokered only) |
-| Compatibility | Limited | Native |
-| Memory overhead | ~50MB | ~5MB |
+| Compatibility | Limited | Native for allowed syscalls |
+| Memory overhead | ~50MB | ~2MB |
+| Cold start | ~200ms | ~8ms |
 | Network performance | Emulated stack | Native stack |
+| Nested containers | Emulated (works) | Blocked (use gVisor) |
 
 ## System Architecture
 
@@ -34,32 +40,33 @@ gVisor's security comes from syscall interposition via a userspace kernel. ZViz 
 │                               │ syscall                              │
 │                               ▼                                      │
 │  ┌───────────────────────────────────────────────────────────────┐  │
-│  │              Layer B: Seccomp-BPF Filter                       │  │
+│  │                   Seccomp-BPF Filter                           │  │
 │  │    ┌──────────────────┬────────────────┬──────────────────┐   │  │
 │  │    │     ALLOW        │     DENY       │   USER_NOTIF     │   │  │
-│  │    │   (fast path)    │  (blocked)     │   (mediated)     │   │  │
+│  │    │   (native)       │  (EPERM)       │   (mediated)     │   │  │
+│  │    │   90 syscalls    │  22 syscalls   │   5 syscalls     │   │  │
 │  │    └──────────────────┴────────────────┴────────┬─────────┘   │  │
 │  └─────────────────────────────────────────────────│─────────────┘  │
 │                                                    │                 │
 │  ┌───────────────────────────────────────────────│───────────────┐  │
-│  │ Layer A: Containment                          │                │  │
+│  │ Containment Layer                             │                │  │
 │  │ • User namespace (UID/GID mapping)            │                │  │
 │  │ • PID namespace (process isolation)           │                │  │
 │  │ • Mount namespace (filesystem isolation)      │                │  │
 │  │ • Network namespace (network isolation)       │                │  │
-│  │ • Capability drop (privilege reduction)       │                │  │
+│  │ • All 41 capabilities dropped                 │                │  │
 │  └───────────────────────────────────────────────│───────────────┘  │
 └──────────────────────────────────────────────────│──────────────────┘
                                                    │
                                                    ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                         ZViz Broker                                │
+│                         ZViz Broker                                  │
 │  ┌───────────────────────────────────────────────────────────────┐  │
 │  │                    Syscall Mediators                           │  │
 │  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐  │  │
 │  │  │ openat  │ │  ioctl  │ │ socket  │ │  clone  │ │ execve  │  │  │
-│  │  │ Path    │ │ Command │ │ Domain  │ │  Flag   │ │  Path   │  │  │
-│  │  │ check   │ │ filter  │ │ filter  │ │ validate│ │  check  │  │  │
+│  │  │  Path   │ │ Command │ │ Domain  │ │  Flag   │ │  Path   │  │  │
+│  │  │  check  │ │ filter  │ │ filter  │ │ validate│ │  check  │  │  │
 │  │  └─────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘  │  │
 │  └───────────────────────────────────────────────────────────────┘  │
 │                               │                                      │
@@ -67,171 +74,110 @@ gVisor's security comes from syscall interposition via a userspace kernel. ZViz 
 │                               ▼                                      │
 │  ┌───────────────────────────────────────────────────────────────┐  │
 │  │                      Host Kernel                               │  │
-│  │  • Layer C: LSM (AppArmor/SELinux/Landlock)                   │  │
-│  │  • Layer D: cgroups v2 (resource limits)                      │  │
-│  │  • Layer E: nftables (network policy)                         │  │
+│  │  • Landlock LSM (filesystem access control)                   │  │
+│  │  • cgroups v2 (resource limits)                               │  │
+│  │  • nftables (network policy)                                  │  │
 │  └───────────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Enforcement Layers
 
-### Layer A: Containment
+ZViz applies five enforcement layers in order:
 
-Sets up resource isolation using Linux namespaces:
+### Layer 1: Namespaces
 
-- **User namespace** — Maps container UID 0 to unprivileged host UID
-- **PID namespace** — Isolates process tree
-- **Mount namespace** — Provides isolated filesystem view
-- **Network namespace** — Isolated network stack
-- **IPC namespace** — Isolated System V IPC
+Isolation using Linux namespaces:
 
-Also drops capabilities to minimum required set.
+- **User namespace** - Maps container UID 0 to unprivileged host UID
+- **PID namespace** - Isolates process tree
+- **Mount namespace** - Isolated filesystem view
+- **Network namespace** - Isolated network stack
+- **IPC namespace** - Isolated System V IPC
+- **UTS namespace** - Isolated hostname
 
-### Layer B: Syscall Gate
+### Layer 2: Capabilities
 
-Seccomp-BPF filter that classifies syscalls:
+All 41 Linux capabilities are dropped via `prctl(PR_CAPBSET_DROP)`. Even if the container runs as "root", it has no privileged capabilities.
+
+### Layer 3: Landlock LSM
+
+Filesystem access control:
+
+- Read-only rootfs
+- Writable only: `/tmp`, `/work`
+- No access to host paths
+
+### Layer 4: Seccomp-BPF
+
+124-instruction BPF filter classifying syscalls:
 
 | Action | Use Case | Performance |
 |--------|----------|-------------|
-| `ALLOW` | Safe syscalls (read, write) | Native speed |
-| `DENY` | Dangerous syscalls (bpf, mount) | Immediate EPERM |
-| `USER_NOTIF` | Need inspection (openat) | Broker overhead |
+| `ALLOW` | Safe syscalls (read, write, mmap) | Native kernel speed |
+| `DENY` | Dangerous syscalls (ptrace, mount, bpf) | Immediate EPERM |
+| `USER_NOTIF` | Need inspection (openat, socket, execve) | Broker overhead |
 
-### Layer C: Object Policy (LSM)
+### Layer 5: cgroups v2
 
-Linux Security Modules provide object-level enforcement:
+Resource limits via cgroups v2 controllers:
 
-- **AppArmor** — Path-based MAC
-- **SELinux** — Type enforcement
-- **Landlock** — Unprivileged sandbox
+- **memory** - Memory + swap limits
+- **cpu** - CPU quota/shares
+- **pids** - Process count limits
+- **io** - I/O bandwidth limits
 
-### Layer D: Resource Control
+## The Broker
 
-cgroups v2 controllers limit resource consumption:
-
-- **memory** — Memory + swap limits
-- **cpu** — CPU quota/shares
-- **pids** — Process count limits
-- **io** — I/O bandwidth limits
-
-### Layer E: Network Policy
-
-Network isolation and filtering:
-
-- **Network namespace** — Isolated network stack
-- **veth pair** — Controlled connectivity
-- **nftables** — Egress/ingress filtering
-
-## Component Details
-
-### The Broker
-
-The broker is the central policy decision point for mediated syscalls.
+The broker is the central policy decision point for mediated syscalls:
 
 ```
 ┌─────────────────────────────────────────┐
-│              ZViz Broker               │
-│                                          │
+│              ZViz Broker                │
+│                                         │
 │  ┌────────────────────────────────────┐ │
-│  │         Notification Listener       │ │
-│  │   • SECCOMP_RET_USER_NOTIF         │ │
-│  │   • epoll-based event loop         │ │
-│  │   • Max 256 concurrent syscalls    │ │
+│  │         Notification Listener      │ │
+│  │   • SECCOMP_RET_USER_NOTIF        │ │
+│  │   • epoll-based event loop        │ │
 │  └────────────────────────────────────┘ │
-│                    │                     │
-│                    ▼                     │
+│                    │                    │
+│                    ▼                    │
 │  ┌────────────────────────────────────┐ │
-│  │          Syscall Dispatch           │ │
-│  │   • Argument extraction            │ │
-│  │   • Profile lookup                 │ │
-│  │   • Mediator selection             │ │
+│  │           Mediators                │ │
+│  │                                    │ │
+│  │  openat:  Path traversal check    │ │
+│  │  ioctl:   Command allowlist       │ │
+│  │  socket:  Domain/type filter      │ │
+│  │  clone:   Flag validation         │ │
+│  │  execve:  Path check              │ │
+│  │  prctl:   Operation filter        │ │
 │  └────────────────────────────────────┘ │
-│                    │                     │
-│                    ▼                     │
+│                    │                    │
+│                    ▼                    │
 │  ┌────────────────────────────────────┐ │
-│  │           Mediators                 │ │
-│  │                                     │ │
-│  │  openat:  Path traversal check     │ │
-│  │  ioctl:   Command allowlist        │ │
-│  │  socket:  Domain/type filter       │ │
-│  │  clone:   Flag validation          │ │
-│  │  execve:  Path check               │ │
-│  │  prctl:   Operation filter         │ │
-│  └────────────────────────────────────┘ │
-│                    │                     │
-│                    ▼                     │
-│  ┌────────────────────────────────────┐ │
-│  │          Response Handler           │ │
-│  │   • SECCOMP_ADDFD for fds          │ │
-│  │   • SECCOMP_USER_NOTIF_FLAG_CONTINUE│ │
-│  │   • Error injection                 │ │
-│  └────────────────────────────────────┘ │
-│                                          │
-│  ┌────────────────────────────────────┐ │
-│  │          Audit Logger               │ │
-│  │   • Syscall, args, decision        │ │
-│  │   • Latency tracking               │ │
-│  │   • JSON structured output         │ │
+│  │          Response Handler          │ │
+│  │   • SECCOMP_ADDFD for fds         │ │
+│  │   • Error injection               │ │
 │  └────────────────────────────────────┘ │
 └─────────────────────────────────────────┘
 ```
 
-### Profile System
+## Profile System
 
-Profiles are compiled to enforcement artifacts:
+Profiles are workload-specific security policies:
 
-```
-┌─────────────────────────────────────────┐
-│           Profile YAML                   │
-│  • syscalls, filesystem, network        │
-│  • resources, capabilities              │
-└────────────────────┬────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────┐
-│           Policy Compiler                │
-│  • Schema validation                    │
-│  • Rule generation                      │
-│  • Optimization                         │
-└────────────────────┬────────────────────┘
-                     │
-          ┌──────────┼──────────┐
-          ▼          ▼          ▼
-    ┌─────────┐ ┌─────────┐ ┌─────────┐
-    │Seccomp  │ │AppArmor │ │nftables │
-    │ BPF     │ │ Profile │ │ Rules   │
-    └─────────┘ └─────────┘ └─────────┘
-```
+| Profile | Description |
+|---------|-------------|
+| `ci-runner` | CI/CD workloads (default) |
+| `web-server` | HTTP servers, APIs |
+| `batch-job` | Data processing (no network) |
+| `hostile-tenant` | Maximum security |
+| `development` | Debugging (allows ptrace) |
 
-## Data Flow
-
-### Container Startup
+Profiles compile to enforcement artifacts:
 
 ```
-1. Parse OCI spec
-2. Load security profile
-3. Set up namespaces (Layer A)
-4. Configure cgroups (Layer D)
-5. Load LSM policy (Layer C)
-6. Set up network (Layer E)
-7. Install seccomp filter (Layer B)
-8. Fork broker process
-9. exec container entrypoint
-```
-
-### Syscall Mediation
-
-```
-1. Container makes syscall
-2. Seccomp filter intercepts
-3. If USER_NOTIF → notify broker
-4. Broker receives notification
-5. Extract syscall arguments
-6. Evaluate against profile
-7. Allow: perform on behalf / continue
-8. Deny: inject error
-9. Log decision
+Profile YAML → Policy Compiler → Seccomp BPF + Landlock rules + cgroup limits
 ```
 
 ## Performance Characteristics
@@ -245,12 +191,21 @@ Profiles are compiled to enforcement artifacts:
 | Brokered (allow) | ~50-100μs |
 | Brokered (fd return) | ~100-200μs |
 
-### Optimization Techniques
+### Why ZViz is Fast
 
-1. **Minimal brokered set** — Only syscalls needing inspection
-2. **BPF fast path** — Common syscalls skip broker
-3. **Connection pooling** — Reuse broker connections
-4. **Batch processing** — Group multiple notifications
+1. **Minimal brokered set** - Only 5 syscalls go through the broker
+2. **BPF fast path** - 90 common syscalls execute at native speed
+3. **No emulation** - Allowed syscalls hit the kernel directly
+
+## When to Use gVisor Instead
+
+ZViz blocks dangerous syscalls with EPERM. gVisor emulates them safely. For some workloads, emulation is required:
+
+- **Docker-in-Docker** - Needs `mount`, `unshare`
+- **Bazel / Nix builds** - Internal sandboxing creates namespaces
+- **strace / debuggers** - Needs `ptrace`
+
+For these workloads, use gVisor. For everything else, ZViz is faster and stricter.
 
 ## See Also
 
@@ -258,3 +213,4 @@ Profiles are compiled to enforcement artifacts:
 - [Broker Design](broker-design.md)
 - [Threat Model](threat-model.md)
 - [Performance](performance.md)
+- [Comparison with gVisor](comparison.md)

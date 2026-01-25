@@ -2,19 +2,21 @@
 
 Get ZViz running in under 5 minutes.
 
-## 1. Install ZViz
+## 1. Build from Source
 
 ```bash
-curl -fsSL https://zviz.io/install.sh | sh
+# Clone the repository
+git clone https://github.com/AIntheSky/zviz.git
+cd zviz
+
+# Build (requires Zig 0.15.0+)
+zig build -Doptimize=ReleaseSafe
+
+# Verify installation
+./zig-out/bin/zviz version
 ```
 
-## 2. Verify Installation
-
-```bash
-zviz version
-```
-
-## 3. Run Your First Isolated Container
+## 2. Run Your First Isolated Container
 
 Create a simple container bundle:
 
@@ -25,14 +27,14 @@ docker export $(docker create alpine:latest) | tar -C mycontainer/rootfs -xf -
 
 # Generate OCI spec
 cd mycontainer
-zviz spec
+../zig-out/bin/zviz spec
 ```
 
 Run the container:
 
 ```bash
 # Create and start the container
-sudo zviz run test-container . /bin/sh -c "echo 'Hello from ZViz!' && id"
+sudo ../zig-out/bin/zviz run test-container . /bin/sh -c "echo 'Hello from ZViz!' && id"
 ```
 
 Expected output:
@@ -41,7 +43,7 @@ Hello from ZViz!
 uid=0(root) gid=0(root) groups=0(root)
 ```
 
-## 4. Test Security Isolation
+## 3. Test Security Isolation
 
 Try some operations that should be blocked:
 
@@ -50,26 +52,60 @@ Try some operations that should be blocked:
 sudo zviz run test2 . /bin/sh -c "mount -t tmpfs none /mnt"
 # Output: mount: permission denied
 
-# This should fail - loading kernel modules is blocked
-sudo zviz run test3 . /bin/sh -c "insmod /nonexistent.ko"
-# Output: insmod: can't insert '/nonexistent.ko': Operation not permitted
+# This should fail - ptrace is blocked
+sudo zviz run test3 . /bin/sh -c "strace ls"
+# Output: strace: ptrace(PTRACE_TRACEME, ...): Operation not permitted
 
 # This should work - basic file operations are allowed
 sudo zviz run test4 . /bin/sh -c "echo test > /tmp/test && cat /tmp/test"
 # Output: test
 ```
 
-## 5. Use a Security Profile
+## 4. Use Verbose Mode
 
-ZViz includes built-in profiles for common use cases:
+See exactly which syscalls are being blocked:
 
 ```bash
-# List available profiles
-zviz compile --list
-
-# Use the CI runner profile
-sudo zviz run --profile ci-runner build-job . /bin/sh -c "npm install && npm test"
+sudo zviz --verbose run test-verbose . /bin/sh -c "ls"
 ```
+
+Output shows blocked syscalls:
+```
+[WILL BLOCK] syscall=ptrace (nr=101) → EPERM
+[WILL BLOCK] syscall=mount (nr=165) → EPERM
+[WILL BLOCK] syscall=unshare (nr=272) → EPERM
+...
+```
+
+This is essential for debugging workloads that fail with mysterious permission errors.
+
+## 5. Use Security Profiles
+
+ZViz includes built-in profiles for common workloads:
+
+```bash
+# Use the CI runner profile (default, balanced security)
+sudo zviz --profile=ci-runner run build-job . /bin/sh -c "npm install && npm test"
+
+# Use the web server profile (network optimized)
+sudo zviz --profile=web-server run my-api . /bin/sh -c "node server.js"
+
+# Use the batch job profile (no network, high memory)
+sudo zviz --profile=batch-job run etl-job . /bin/sh -c "python process.py"
+
+# Use development profile (allows ptrace - NOT for production)
+sudo zviz --profile=development run debug . /bin/sh -c "strace ls"
+```
+
+Available profiles:
+
+| Profile | Use Case | Notes |
+|---------|----------|-------|
+| `ci-runner` | CI/CD, builds | Default, balanced security |
+| `web-server` | HTTP APIs | Network allowed |
+| `batch-job` | Data processing | No network, 8G memory |
+| `hostile-tenant` | Untrusted users | Maximum restrictions |
+| `development` | Debugging | Allows ptrace - **NOT for production** |
 
 ## 6. View Container State
 
@@ -94,21 +130,21 @@ rm -rf mycontainer
 
 ## What's Happening?
 
-When you run a container with ZViz, several security layers are applied:
+When you run a container with ZViz, five security layers are applied:
 
 ```
 ┌─────────────────────────────────────────────┐
 │           Your Application                   │
 ├─────────────────────────────────────────────┤
-│  Layer A: Namespaces + Capabilities         │ ← Resource isolation
+│  1. Namespaces (user, pid, mount, ipc, uts) │ ← Isolation
 ├─────────────────────────────────────────────┤
-│  Layer B: Seccomp Filter + Broker           │ ← Syscall mediation
+│  2. Capabilities (all 41 dropped)           │ ← Privilege reduction
 ├─────────────────────────────────────────────┤
-│  Layer C: AppArmor/SELinux/Landlock         │ ← File/object policy
+│  3. Landlock LSM                            │ ← Filesystem policy
 ├─────────────────────────────────────────────┤
-│  Layer D: cgroups v2                        │ ← Resource limits
+│  4. Seccomp-BPF (124 instructions)          │ ← Syscall filtering
 ├─────────────────────────────────────────────┤
-│  Layer E: Network namespace + nftables      │ ← Network policy
+│  5. cgroups v2                              │ ← Resource limits
 └─────────────────────────────────────────────┘
 ```
 
@@ -117,34 +153,29 @@ When you run a container with ZViz, several security layers are applied:
 ### Run with Resource Limits
 
 ```bash
-sudo zviz run --memory 256M --cpus 0.5 limited-job . /bin/sh -c "stress --cpu 4"
+# Memory and PID limits are set via cgroups
+sudo zviz run limited-job . /bin/sh -c "stress --cpu 4"
 ```
 
-### Run with Network Isolation
+### Run the Security Test Suite
 
 ```bash
-# Block all network access
-sudo zviz run --network none isolated . /bin/sh -c "curl google.com"
-# Output: Network is unreachable
+# Run all security and escape tests
+./demo.sh --all
 
-# Allow only internal network
-sudo zviz run --network-allow 10.0.0.0/8 internal . /bin/sh -c "curl 10.0.0.1"
-```
+# Run just escape tests
+./demo.sh --escape
 
-### Run with Audit Logging
-
-```bash
-sudo zviz run --audit audit-test . /bin/sh -c "ls /etc"
-# Check audit log
-cat /var/log/zviz/audit.json
+# Run performance benchmarks
+./demo.sh --perf
 ```
 
 ## Next Steps
 
-- [First Container Tutorial](first-container.md) — Detailed walkthrough
-- [Profile Authoring](../user-guide/profile-authoring.md) — Create custom profiles
-- [Kubernetes Integration](../operator-guide/kubernetes.md) — Use with K8s
-- [Architecture](../architecture/index.md) — Understand how it works
+- [First Container Tutorial](first-container.md) - Detailed walkthrough
+- [Profile Authoring](../user-guide/profile-authoring.md) - Create custom profiles
+- [Kubernetes Integration](../operator-guide/kubernetes.md) - Use with K8s
+- [Architecture](../architecture/index.md) - Understand how it works
 
 ## Troubleshooting
 
@@ -156,20 +187,22 @@ Ensure you're running as root or have appropriate capabilities:
 sudo zviz run ...
 ```
 
+### Workload Fails with EPERM
+
+Use `--verbose` to see which syscall is being blocked:
+
+```bash
+sudo zviz --verbose run debug-container . /bin/sh -c "your-command"
+```
+
+If a safe syscall is being blocked, consider using a different profile or creating a custom one.
+
 ### "Seccomp not available"
 
 Check kernel configuration:
 
 ```bash
 grep CONFIG_SECCOMP /boot/config-$(uname -r)
-```
-
-### Container Won't Start
-
-Check for detailed errors:
-
-```bash
-zviz --log-level debug run ...
 ```
 
 See [Troubleshooting Guide](../user-guide/troubleshooting.md) for more help.

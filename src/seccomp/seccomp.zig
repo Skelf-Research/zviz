@@ -186,11 +186,13 @@ const AF_INET6: u32 = 10;
 const SOCKET_FILTER_INSNS: usize = 5;
 
 /// Generate BPF program from syscall policy
-pub fn generateBpf(allocator: std.mem.Allocator, policy: SyscallPolicy) ![]BpfInsn {
-    log.debug("Generating BPF: {d} allow, {d} deny, {d} broker", .{
+/// When verbose=true, denied syscalls are routed through USER_NOTIF for logging
+pub fn generateBpf(allocator: std.mem.Allocator, policy: SyscallPolicy, verbose: bool) ![]BpfInsn {
+    log.debug("Generating BPF: {d} allow, {d} deny, {d} broker, verbose={}", .{
         policy.allow.len,
         policy.deny.len,
         policy.broker.len,
+        verbose,
     });
 
     var builder = BpfBuilder.init(allocator);
@@ -234,11 +236,18 @@ pub fn generateBpf(allocator: std.mem.Allocator, policy: SyscallPolicy) ![]BpfIn
         try builder.jeqK(@intCast(syscall_nr), allow_ret_offset, 0);
     }
 
-    // Generate deny list checks: if match, jump to RET ERRNO
+    // Generate deny list checks: if match, jump to RET ERRNO (or USER_NOTIF if verbose)
     for (policy.deny, 0..) |syscall_nr, i| {
         const remaining: u8 = @intCast(total_checks - allow_count - i - 1);
-        const deny_ret_offset: u8 = remaining + sf; // Past remaining checks + socket filter to RET ERRNO
-        try builder.jeqK(@intCast(syscall_nr), deny_ret_offset, 0);
+        if (verbose) {
+            // Verbose mode: route denies through broker for logging
+            const deny_ret_offset: u8 = remaining + sf + 2; // Past socket filter + ERRNO + ALLOW to USER_NOTIF
+            try builder.jeqK(@intCast(syscall_nr), deny_ret_offset, 0);
+        } else {
+            // Normal mode: immediate EPERM
+            const deny_ret_offset: u8 = remaining + sf; // Past remaining checks + socket filter to RET ERRNO
+            try builder.jeqK(@intCast(syscall_nr), deny_ret_offset, 0);
+        }
     }
 
     // Generate broker list checks: if match, jump to RET USER_NOTIF
@@ -365,11 +374,77 @@ pub const Syscall = struct {
     pub const ptrace = 101;
     pub const mount = 165;
     pub const umount2 = 166;
+    pub const pivot_root = 155;
+    pub const init_module = 175;
+    pub const delete_module = 176;
     pub const kexec_load = 246;
     pub const perf_event_open = 298;
     pub const bpf = 321;
     pub const userfaultfd = 323;
+    pub const unshare = 272;
+    pub const setns = 308;
 };
+
+/// Get human-readable syscall name from number (x86_64)
+pub fn getSyscallName(nr: i32) []const u8 {
+    return switch (nr) {
+        0 => "read",
+        1 => "write",
+        2 => "open",
+        3 => "close",
+        4 => "stat",
+        5 => "fstat",
+        6 => "lstat",
+        7 => "poll",
+        8 => "lseek",
+        9 => "mmap",
+        10 => "mprotect",
+        11 => "munmap",
+        12 => "brk",
+        16 => "ioctl",
+        24 => "sched_yield",
+        41 => "socket",
+        56 => "clone",
+        57 => "fork",
+        59 => "execve",
+        60 => "exit",
+        97 => "getrlimit",
+        101 => "ptrace",
+        135 => "personality",
+        155 => "pivot_root",
+        157 => "prctl",
+        160 => "setrlimit",
+        163 => "acct",
+        165 => "mount",
+        166 => "umount2",
+        167 => "swapon",
+        168 => "swapoff",
+        169 => "reboot",
+        170 => "sethostname",
+        171 => "setdomainname",
+        172 => "iopl",
+        173 => "ioperm",
+        175 => "init_module",
+        176 => "delete_module",
+        179 => "quotactl",
+        203 => "sched_setaffinity",
+        204 => "sched_getaffinity",
+        246 => "kexec_load",
+        248 => "add_key",
+        249 => "request_key",
+        257 => "openat",
+        272 => "unshare",
+        298 => "perf_event_open",
+        308 => "setns",
+        309 => "getcpu",
+        313 => "finit_module",
+        321 => "bpf",
+        323 => "userfaultfd",
+        435 => "clone3",
+        437 => "openat2",
+        else => "unknown",
+    };
+}
 
 test "syscall policy lookup" {
     const policy = SyscallPolicy{
@@ -389,7 +464,26 @@ test "bpf generation" {
         .broker = &.{Syscall.openat},
     };
 
-    const bpf = try generateBpf(std.testing.allocator, policy);
+    const bpf = try generateBpf(std.testing.allocator, policy, false);
     defer std.testing.allocator.free(bpf);
     try std.testing.expect(bpf.len > 0);
+}
+
+test "bpf generation verbose mode" {
+    const policy = SyscallPolicy{
+        .allow = &.{Syscall.read},
+        .deny = &.{Syscall.ptrace},
+        .broker = &.{Syscall.openat},
+    };
+
+    const bpf = try generateBpf(std.testing.allocator, policy, true);
+    defer std.testing.allocator.free(bpf);
+    try std.testing.expect(bpf.len > 0);
+}
+
+test "getSyscallName" {
+    try std.testing.expectEqualStrings("read", getSyscallName(0));
+    try std.testing.expectEqualStrings("ptrace", getSyscallName(101));
+    try std.testing.expectEqualStrings("mount", getSyscallName(165));
+    try std.testing.expectEqualStrings("unknown", getSyscallName(9999));
 }

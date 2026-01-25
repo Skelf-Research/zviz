@@ -196,7 +196,7 @@ fn generateSeccompBpf(allocator: std.mem.Allocator, syscalls: schema.Syscalls) !
         .deny = syscalls.deny,
         .broker = syscalls.broker,
     };
-    return seccomp.generateBpf(allocator, policy);
+    return seccomp.generateBpf(allocator, policy, false);
 }
 
 fn generateLsmPolicy(

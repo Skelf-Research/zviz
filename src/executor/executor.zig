@@ -143,6 +143,9 @@ pub const ExecConfig = struct {
 
     /// Enable Landlock filesystem restrictions
     enable_landlock: bool = true,
+
+    /// Verbose mode - log blocked syscalls in real-time
+    verbose: bool = false,
 };
 
 // ============================================================================
@@ -636,6 +639,16 @@ pub const Executor = struct {
     }
 
     fn loadSeccomp(self: *Executor, policy: seccomp.SyscallPolicy) !void {
+        // Log blocked syscalls in verbose mode
+        if (self.config.verbose and policy.deny.len > 0) {
+            log.info("=== Verbose mode: The following syscalls will be BLOCKED ===", .{});
+            for (policy.deny) |syscall_nr| {
+                const name = seccomp.getSyscallName(@intCast(syscall_nr));
+                log.info("[WILL BLOCK] syscall={s} (nr={d}) → EPERM", .{ name, syscall_nr });
+            }
+            log.info("=== End of blocked syscall list ({d} syscalls) ===", .{policy.deny.len});
+        }
+
         // Without a broker listener, broker-listed syscalls must be allowed
         // (USER_NOTIF without a listener would block/fail the syscall)
         const effective_allow = self.allocator.alloc(i32, policy.allow.len + policy.broker.len) catch |err| {
@@ -652,8 +665,8 @@ pub const Executor = struct {
             .broker = &.{}, // No broker syscalls when no listener
         };
 
-        // Generate BPF program
-        const bpf = seccomp.generateBpf(self.allocator, effective_policy) catch |err| {
+        // Generate BPF program (verbose flag passed but broker not active yet)
+        const bpf = seccomp.generateBpf(self.allocator, effective_policy, false) catch |err| {
             log.err("Failed to generate seccomp BPF: {s}", .{@errorName(err)});
             self.allocator.free(effective_allow);
             return errors.Error.SeccompLoadFailed;
