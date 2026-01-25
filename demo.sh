@@ -33,6 +33,7 @@ NC='\033[0m'
 HAVE_ZVIZ=false
 HAVE_DOCKER=false
 HAVE_GVISOR=false
+RUNSC_BIN=""
 
 log_info()    { echo -e "${BLUE}[INFO]${NC} $1"; }
 log_pass()    { echo -e "${GREEN}[PASS]${NC} $1"; }
@@ -75,20 +76,25 @@ check_prerequisites() {
     fi
     log_pass "Kernel version: $(uname -r)"
 
-    # Check Docker (required for creating OCI bundle and gVisor comparison)
+    # Check Docker (optional - for runc baseline and creating OCI bundle)
     if command -v docker &>/dev/null && docker info &>/dev/null 2>&1; then
         log_pass "Docker available"
         HAVE_DOCKER=true
-
-        # Check gVisor
-        if docker info 2>/dev/null | grep -q runsc; then
-            log_pass "gVisor runtime configured in Docker"
-            HAVE_GVISOR=true
-        else
-            log_warn "gVisor runtime not configured in Docker"
-        fi
     else
-        log_warn "Docker not available (optional - for runc/gVisor comparison)"
+        log_warn "Docker not available (optional - for runc baseline)"
+    fi
+
+    # Check gVisor (runsc binary directly - for parity comparison with ZViz)
+    if command -v runsc &>/dev/null; then
+        RUNSC_BIN="runsc"
+        log_pass "gVisor (runsc) found: $(which runsc)"
+        HAVE_GVISOR=true
+    elif [[ -x /usr/local/bin/runsc ]]; then
+        RUNSC_BIN="/usr/local/bin/runsc"
+        log_pass "gVisor (runsc) found: $RUNSC_BIN"
+        HAVE_GVISOR=true
+    else
+        log_warn "gVisor (runsc) not found - install for parity comparison"
     fi
 
     # ZViz supports rootless mode via user namespaces
@@ -116,26 +122,50 @@ show_zviz_install_instructions() {
 show_gvisor_install_instructions() {
     echo ""
     echo -e "${CYAN}+----------------------------------------------------------------+${NC}"
-    echo -e "${CYAN}|  gVisor (runsc) not detected. Install for comparison:         |${NC}"
+    echo -e "${CYAN}|  gVisor (runsc) not detected. Install for parity comparison:  |${NC}"
     echo -e "${CYAN}+----------------------------------------------------------------+${NC}"
     echo ""
-    echo "  # Install gVisor"
-    echo "  curl -fsSL https://gvisor.dev/archive.key | sudo gpg \\"
-    echo "    --dearmor -o /usr/share/keyrings/gvisor-archive-keyring.gpg"
+    echo "  # Quick install (download binary directly)"
+    echo "  ./scripts/install-gvisor.sh"
     echo ""
-    echo "  echo \"deb [arch=amd64 signed-by=/usr/share/keyrings/gvisor-archive-keyring.gpg] \\"
-    echo "    https://storage.googleapis.com/gvisor/releases release main\" | \\"
-    echo "    sudo tee /etc/apt/sources.list.d/gvisor.list > /dev/null"
-    echo ""
-    echo "  sudo apt update && sudo apt install -y runsc"
-    echo ""
-    echo "  # Configure Docker to use gVisor"
-    echo "  sudo runsc install"
-    echo "  sudo systemctl restart docker"
+    echo "  # Or manually:"
+    echo "  curl -fsSL https://storage.googleapis.com/gvisor/releases/release/latest/x86_64/runsc -o /tmp/runsc"
+    echo "  chmod +x /tmp/runsc && sudo mv /tmp/runsc /usr/local/bin/"
     echo ""
     echo "  # Verify"
-    echo "  docker run --runtime=runsc hello-world"
+    echo "  runsc --version"
     echo ""
+}
+
+# Run a command in gVisor using the same OCI bundle (parity with ZViz)
+run_gvisor_bundle() {
+    local container_id="$1"
+    local bundle_dir="$2"
+    local output_file="${3:-}"
+
+    # Clean up any previous container with same ID
+    sudo $RUNSC_BIN delete --force "$container_id" 2>/dev/null || true
+
+    # gVisor requires root for OCI runtime mode
+    if [[ $EUID -ne 0 ]]; then
+        if [[ -n "$output_file" ]]; then
+            sudo $RUNSC_BIN run --bundle "$bundle_dir" "$container_id" > "$output_file" 2>/dev/null
+        else
+            sudo $RUNSC_BIN run --bundle "$bundle_dir" "$container_id" 2>/dev/null
+        fi
+    else
+        if [[ -n "$output_file" ]]; then
+            $RUNSC_BIN run --bundle "$bundle_dir" "$container_id" > "$output_file" 2>/dev/null
+        else
+            $RUNSC_BIN run --bundle "$bundle_dir" "$container_id" 2>/dev/null
+        fi
+    fi
+    local ret=$?
+
+    # Cleanup
+    sudo $RUNSC_BIN delete --force "$container_id" 2>/dev/null || true
+
+    return $ret
 }
 
 # ============================================================================
@@ -342,12 +372,12 @@ run_performance_demo() {
     echo -e "${CYAN}--- ZViz Benchmark ---${NC}"
     run_zviz_benchmark "$RESULTS_DIR/bench_zviz.csv"
 
-    # 3. gVisor benchmark (if available)
+    # 3. gVisor benchmark (if available) - uses SAME bundle as ZViz for parity
     if [[ "$HAVE_GVISOR" == "true" ]]; then
         echo ""
-        echo -e "${YELLOW}--- gVisor Benchmark ---${NC}"
-        run_docker_benchmark "gvisor" "--runtime=runsc" "$RESULTS_DIR/bench_gvisor.csv"
-    elif [[ "$HAVE_DOCKER" == "true" ]]; then
+        echo -e "${YELLOW}--- gVisor Benchmark (same bundle as ZViz) ---${NC}"
+        run_gvisor_benchmark "$RESULTS_DIR/bench_gvisor.csv"
+    else
         log_warn "gVisor not available - skipping gVisor benchmark"
     fi
 
@@ -456,6 +486,57 @@ EOF
     fi
 
     $ZVIZ_BIN delete demo-zviz-bench 2>/dev/null || true
+}
+
+run_gvisor_benchmark() {
+    local output_file="$1"
+
+    log_info "Running gVisor benchmark with SAME bundle as ZViz (parity comparison)..."
+
+    # Ensure benchmark binary exists in rootfs (from zviz benchmark step)
+    if [[ ! -x "$BUNDLE_DIR/rootfs/bench" ]]; then
+        log_warn "Benchmark binary not found - compile it first"
+        echo "syscall,latency_ns" > "$output_file"
+        return
+    fi
+
+    # Update config.json for benchmark
+    cat > "$BUNDLE_DIR/config.json" << 'EOF'
+{
+    "ociVersion": "1.0.2",
+    "process": {
+        "terminal": false,
+        "user": { "uid": 0, "gid": 0 },
+        "args": ["/bench"],
+        "env": ["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"],
+        "cwd": "/"
+    },
+    "root": { "path": "rootfs", "readonly": false },
+    "hostname": "gvisor-bench",
+    "linux": {
+        "namespaces": [
+            { "type": "pid" },
+            { "type": "mount" },
+            { "type": "ipc" },
+            { "type": "uts" },
+            { "type": "network" }
+        ]
+    }
+}
+EOF
+
+    # Run with gVisor using same bundle
+    if run_gvisor_bundle "demo-gvisor-bench" "$BUNDLE_DIR" "$output_file"; then
+        if grep -q "syscall,latency_ns" "$output_file" 2>/dev/null; then
+            log_pass "gVisor benchmark completed (same bundle as ZViz)"
+        else
+            log_warn "gVisor benchmark produced no results"
+            echo "syscall,latency_ns" > "$output_file"
+        fi
+    else
+        log_warn "gVisor benchmark failed"
+        echo "syscall,latency_ns" > "$output_file"
+    fi
 }
 
 show_benchmark_comparison() {
@@ -693,17 +774,20 @@ EOF
         zviz_results["$test_name"]="$result"
     done <<< "$zviz_output"
 
-    # Run in gVisor if available
+    # Run in gVisor if available - using SAME bundle for parity
     declare -A gvisor_results
     if [[ "$HAVE_GVISOR" == "true" ]]; then
-        log_info "Running same tests in gVisor..."
-        local gvisor_output
-        gvisor_output=$(docker run --rm --runtime=runsc \
-            -v "$sectest_bin:/bin/sectest:ro" \
-            alpine:latest /bin/sectest 2>/dev/null)
-        while IFS=',' read -r test_name result err_code; do
-            gvisor_results["$test_name"]="$result"
-        done <<< "$gvisor_output"
+        log_info "Running same tests in gVisor (same bundle - parity comparison)..."
+
+        # gVisor uses the same bundle with the same binary already in rootfs
+        local gvisor_output_file="$RESULTS_DIR/sectest_gvisor.txt"
+        if run_gvisor_bundle "sectest-gvisor" "$BUNDLE_DIR" "$gvisor_output_file"; then
+            while IFS=',' read -r test_name result err_code; do
+                [[ -n "$test_name" ]] && gvisor_results["$test_name"]="$result"
+            done < "$gvisor_output_file"
+        else
+            log_warn "gVisor security test failed"
+        fi
     fi
 
     # Display results table
@@ -1011,14 +1095,33 @@ EOF
     # Run escape suite in ZViz container
     log_info "Running escape tests inside ZViz container..."
     $ZVIZ_BIN delete escape-zviz 2>/dev/null || true
-    local output
-    output=$($ZVIZ_BIN run escape-zviz --bundle "$BUNDLE_DIR" 2>/dev/null)
+    local zviz_output
+    zviz_output=$($ZVIZ_BIN run escape-zviz --bundle "$BUNDLE_DIR" 2>/dev/null)
     $ZVIZ_BIN delete escape-zviz 2>/dev/null || true
+
+    # Run escape suite in gVisor (same bundle - parity comparison)
+    local gvisor_output=""
+    if [[ "$HAVE_GVISOR" == "true" ]]; then
+        log_info "Running escape tests inside gVisor container (same bundle)..."
+        local gvisor_output_file="$RESULTS_DIR/escape_gvisor.txt"
+        if run_gvisor_bundle "escape-gvisor" "$BUNDLE_DIR" "$gvisor_output_file"; then
+            gvisor_output=$(cat "$gvisor_output_file")
+        fi
+    fi
+
+    # Parse gVisor results into associative array
+    declare -A gvisor_escape_results
+    if [[ -n "$gvisor_output" ]]; then
+        while IFS=',' read -r category test_name result err_code; do
+            [[ -n "$test_name" ]] && gvisor_escape_results["$test_name"]="$result"
+        done <<< "$gvisor_output"
+    fi
 
     # Parse and display results by category
     local total=0
     local blocked=0
-    local current_cat=""
+    local gvisor_blocked=0
+    local matched=0
 
     declare -A cat_labels
     cat_labels["namespace"]="Namespace Breakout"
@@ -1028,8 +1131,13 @@ EOF
     cat_labels["network"]="Network Escape"
     cat_labels["resource"]="Resource Exhaustion"
 
-    printf "%-20s %-25s %10s %8s\n" "Category" "Test" "Result" "Errno"
-    printf "%-20s %-25s %10s %8s\n" "--------------------" "-------------------------" "----------" "--------"
+    if [[ "$HAVE_GVISOR" == "true" ]]; then
+        printf "%-20s %-25s %10s %10s %8s\n" "Category" "Test" "ZViz" "gVisor" "Match"
+        printf "%-20s %-25s %10s %10s %8s\n" "--------------------" "-------------------------" "----------" "----------" "--------"
+    else
+        printf "%-20s %-25s %10s %8s\n" "Category" "Test" "Result" "Errno"
+        printf "%-20s %-25s %10s %8s\n" "--------------------" "-------------------------" "----------" "--------"
+    fi
 
     while IFS=',' read -r category test_name result err_code; do
         [[ -z "$category" ]] && continue
@@ -1037,31 +1145,71 @@ EOF
 
         local cat_display="${cat_labels[$category]:-$category}"
 
-        # Color code result
-        local result_colored="$result"
+        # Color code ZViz result
+        local zviz_colored="$result"
         if [[ "$result" == "BLOCKED" ]]; then
-            result_colored="${GREEN}BLOCKED${NC}"
+            zviz_colored="${GREEN}BLOCKED${NC}"
             blocked=$((blocked + 1))
         else
-            result_colored="${RED}ALLOWED${NC}"
+            zviz_colored="${RED}ALLOWED${NC}"
         fi
 
-        printf "%-20s %-25s %18b %8s\n" "$cat_display" "$test_name" "$result_colored" "$err_code"
-    done <<< "$output"
+        if [[ "$HAVE_GVISOR" == "true" ]]; then
+            local gvisor_r="${gvisor_escape_results[$test_name]:-N/A}"
+            local gvisor_colored="$gvisor_r"
+            local match_str=""
+
+            if [[ "$gvisor_r" == "BLOCKED" ]]; then
+                gvisor_colored="${GREEN}BLOCKED${NC}"
+                gvisor_blocked=$((gvisor_blocked + 1))
+            elif [[ "$gvisor_r" == "ALLOWED" ]]; then
+                gvisor_colored="${RED}ALLOWED${NC}"
+            fi
+
+            if [[ "$gvisor_r" != "N/A" ]]; then
+                if [[ "$result" == "$gvisor_r" ]]; then
+                    matched=$((matched + 1))
+                    match_str="${GREEN}MATCH${NC}"
+                else
+                    match_str="${YELLOW}DIFFER${NC}"
+                fi
+            else
+                match_str="-"
+            fi
+
+            printf "%-20s %-25s %18b %18b %16b\n" "$cat_display" "$test_name" "$zviz_colored" "$gvisor_colored" "$match_str"
+        else
+            printf "%-20s %-25s %18b %8s\n" "$cat_display" "$test_name" "$zviz_colored" "$err_code"
+        fi
+    done <<< "$zviz_output"
 
     echo ""
     echo -e "${BOLD}+------------------------------------------------------------+${NC}"
     local failed=$((total - blocked))
     if [[ $failed -eq 0 ]]; then
-        echo -e "${GREEN}Result: ${blocked}/${total} escape attempts BLOCKED - sandbox is secure${NC}"
+        echo -e "${GREEN}Result: ZViz blocked ${blocked}/${total} escape attempts - sandbox is secure${NC}"
     else
         echo -e "${RED}SECURITY WARNING: ${failed}/${total} escape attempts succeeded!${NC}"
+    fi
+
+    if [[ "$HAVE_GVISOR" == "true" ]]; then
+        local gvisor_failed=$((total - gvisor_blocked))
+        if [[ $gvisor_failed -eq 0 ]]; then
+            echo -e "${GREEN}       gVisor blocked ${gvisor_blocked}/${total} escape attempts${NC}"
+        else
+            echo -e "${YELLOW}       gVisor blocked ${gvisor_blocked}/${total} escape attempts${NC}"
+        fi
+        if [[ $total -gt 0 ]]; then
+            local pct=$((matched * 100 / total))
+            echo -e "${CYAN}       Policy match: ${matched}/${total} (${pct}%)${NC}"
+        fi
     fi
     echo -e "${BOLD}+------------------------------------------------------------+${NC}"
     echo ""
 
     # Save results
-    echo "$output" > "$RESULTS_DIR/escape_results.csv"
+    echo "$zviz_output" > "$RESULTS_DIR/escape_results.csv"
+    [[ -n "$gvisor_output" ]] && echo "$gvisor_output" > "$RESULTS_DIR/escape_gvisor.csv"
 }
 
 # ============================================================================
@@ -1095,19 +1243,45 @@ run_quick_demo() {
         elapsed=$(( (end - start) / 1000000 ))
         echo "${elapsed}ms"
 
-        # gVisor
-        if [[ "$HAVE_GVISOR" == "true" ]]; then
-            echo -n "gVisor (runsc): "
-            start=$(date +%s%N)
-            docker run --rm --runtime=runsc alpine:latest echo "hello" >/dev/null 2>&1
-            end=$(date +%s%N)
-            elapsed=$(( (end - start) / 1000000 ))
-            echo "${elapsed}ms"
-        else
-            echo "gVisor: not installed"
-        fi
+    fi
+
+    # gVisor cold start (using same bundle as ZViz for parity)
+    if [[ "$HAVE_GVISOR" == "true" ]]; then
+        # Ensure bundle exists
+        setup_oci_bundle
+
+        cat > "$BUNDLE_DIR/config.json" << 'EOF'
+{
+    "ociVersion": "1.0.2",
+    "process": {
+        "terminal": false,
+        "user": { "uid": 0, "gid": 0 },
+        "args": ["/bin/echo", "hello"],
+        "env": ["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"],
+        "cwd": "/"
+    },
+    "root": { "path": "rootfs", "readonly": false },
+    "hostname": "gvisor",
+    "linux": {
+        "namespaces": [
+            { "type": "pid" },
+            { "type": "mount" },
+            { "type": "ipc" },
+            { "type": "uts" },
+            { "type": "network" }
+        ]
+    }
+}
+EOF
+
+        echo -n "gVisor (runsc): "
+        start=$(date +%s%N)
+        run_gvisor_bundle "demo-gvisor-quick" "$BUNDLE_DIR" >/dev/null 2>&1
+        end=$(date +%s%N)
+        elapsed=$(( (end - start) / 1000000 ))
+        echo "${elapsed}ms (same bundle as ZViz)"
     else
-        log_info "Docker not available - showing ZViz cold start only"
+        echo "gVisor: not installed (run ./scripts/install-gvisor.sh)"
     fi
 
     # ZViz cold start

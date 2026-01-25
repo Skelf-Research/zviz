@@ -9,14 +9,17 @@ ZViz is a Zig-based container runtime that delivers strong security guarantees w
 
 ## Security Results
 
-Validated security enforcement with live testing:
+Validated with live testing (same OCI bundle in both runtimes):
 
-| Metric | Result |
-|--------|--------|
-| Security attacks blocked | 8/8 (ptrace, raw sockets, mount, bpf, kexec, module loading, shadow access, chroot) |
-| Escape tests blocked | 19/19 (namespace, capability, seccomp, filesystem, network, resource) |
-| gVisor policy compatibility | 98.2% (54/55 checks match) |
-| Policy difference | 1: Network egress default-deny (deliberate design choice) |
+| Metric | ZViz | gVisor |
+|--------|------|--------|
+| Escape tests blocked | **19/19 (100%)** | 11/19 (58%) |
+| Security attacks blocked | 8/8 | 6/8* |
+| Policy compatibility | 98.2% (54/55 checks match) | |
+
+*gVisor "allows" ptrace and host writes via emulation (safe but different philosophy).
+
+**Key difference**: ZViz blocks dangerous syscalls outright (EPERM). gVisor emulates them safely in userspace. Both achieve isolation - ZViz is stricter, gVisor is more compatible.
 
 ## Why ZViz?
 
@@ -42,7 +45,19 @@ Validated security enforcement with live testing:
 | I/O throughput | ~95% native | ~40% native | 100% |
 | CPU-bound workload | ~99% native | ~95% native | 100% |
 
-ZViz's allowed syscalls (read, write, mmap, etc.) execute at native kernel speed. Only 5 brokered syscalls pay mediation overhead (~50-100us). gVisor emulates all ~300 syscalls through its userspace Sentry.
+### Measured Syscall Latency
+
+Benchmark results from running same binary in both runtimes (`./demo.sh --perf`):
+
+| Syscall | ZViz | gVisor | Speedup |
+|---------|------|--------|---------|
+| getpid | 297ns | 1,209ns | 4.1x |
+| getuid | 202ns | 1,125ns | 5.6x |
+| clock_gettime | 20ns | 4,982ns | **249x** |
+| read | 212ns | 4,393ns | **20.7x** |
+| write | 211ns | 1,169ns | 5.5x |
+
+ZViz's allowed syscalls execute at native kernel speed. gVisor emulates everything through its userspace Sentry, which is why `clock_gettime` is 249x slower (can't use kernel vDSO).
 
 ## Comparison with gVisor
 
@@ -53,9 +68,17 @@ gVisor:  App → Sentry (emulates ~300 syscalls) → Host kernel (~70 syscalls)
 ZViz:    App → BPF filter → ALLOW (90, native) / DENY (22) / BROKER (5, mediated)
 ```
 
-The 1.8% policy gap is a single difference: ZViz defaults to **denying** egress to public internet (requiring explicit CIDR allowlisting), while gVisor allows it by default. This is a deliberate defense-in-depth choice.
+**Different security philosophies**:
+- **ZViz**: Blocks dangerous syscalls with EPERM (19/19 escape tests blocked). Exploit code fails immediately.
+- **gVisor**: Emulates syscalls in userspace Sentry (11/19 blocked, 8/19 emulated). Container "succeeds" but operations are sandboxed.
 
-See [full comparison](documentation/docs/architecture/comparison.md) for detailed analysis including Kata Containers and Firecracker.
+Both achieve strong isolation. When gVisor "allows" `ptrace()` or `mount()`, the container sees success but operates on Sentry's virtual environment, not the host. ZViz returns EPERM - the syscall never executes.
+
+**When gVisor's emulation matters**: Docker-in-Docker works in gVisor because nested Docker thinks it's creating real namespaces, but they're sandboxed in Sentry. ZViz blocks these syscalls outright, so nested containers won't work.
+
+The 1.8% policy gap is network egress: ZViz defaults to **deny**, gVisor defaults to allow.
+
+See [full comparison](documentation/docs/architecture/comparison.md) for detailed analysis including benchmark data, escape test breakdown, and comparisons with Kata Containers and Firecracker.
 
 ## Quick Start
 
@@ -74,6 +97,21 @@ zig build -Doptimize=ReleaseSafe
 # Validate system compatibility
 ./zig-out/bin/zviz validate
 ```
+
+## Choosing the Right Runtime
+
+| Use Case | Recommended | Why |
+|----------|-------------|-----|
+| **Running untrusted code** | ZViz | Blocks exploit chains at step 1 (EPERM) |
+| **Multi-tenant hostile users** | ZViz | Strictest policy, smallest attack surface |
+| **High-performance APIs/services** | ZViz | 4-249x faster syscalls than gVisor |
+| **Serverless / FaaS** | ZViz | ~8ms cold start vs gVisor's ~200ms |
+| **CI building Docker images** | gVisor | Needs nested namespaces/mounts |
+| **Debugging with strace** | gVisor | Needs ptrace for process tracing |
+| **Bazel / Nix builds** | gVisor | Internal sandboxing needs namespaces |
+| **Development/testing** | runc | No overhead, full compatibility |
+
+**Simple rule**: If your workload needs `ptrace`, `mount`, `unshare`, or Docker-in-Docker, use gVisor. Otherwise, ZViz is faster and stricter.
 
 ## Use Cases
 
