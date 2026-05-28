@@ -422,6 +422,38 @@ pub const Container = struct {
             }
         }
 
+        // Parse mounts array (A5). Each entry: { destination, type?, source?, options? }
+        if (root_obj.object.get("mounts")) |mnts_val| {
+            if (mnts_val == .array) {
+                const mounts = try self.allocator.alloc(Config.Mount, mnts_val.array.items.len);
+                for (mnts_val.array.items, 0..) |item, i| {
+                    var m: Config.Mount = .{ .destination = "" };
+                    if (item == .object) {
+                        if (item.object.get("destination")) |d| {
+                            if (d == .string) m.destination = d.string;
+                        }
+                        if (item.object.get("type")) |t| {
+                            if (t == .string) m.type = t.string;
+                        }
+                        if (item.object.get("source")) |s| {
+                            if (s == .string) m.source = s.string;
+                        }
+                        if (item.object.get("options")) |opts_val| {
+                            if (opts_val == .array) {
+                                const opts = try self.allocator.alloc([]const u8, opts_val.array.items.len);
+                                for (opts_val.array.items, 0..) |opt, j| {
+                                    opts[j] = if (opt == .string) opt.string else "";
+                                }
+                                m.options = opts;
+                            }
+                        }
+                    }
+                    mounts[i] = m;
+                }
+                config.mounts = mounts;
+            }
+        }
+
         self.config = config;
     }
 
@@ -887,6 +919,23 @@ pub fn start(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
     // Build executor config
     const rootfs_readonly = if (container.config) |cfg| cfg.root.readonly else false;
+    // Translate the OCI mounts array (if any) into the executor's local Mount
+    // type so the executor module doesn't depend on runtime.zig.
+    var exec_mounts: ?[]executor.ExecConfigMount = null;
+    if (container.config) |cfg| {
+        if (cfg.mounts) |mnts| {
+            const arr = try allocator.alloc(executor.ExecConfigMount, mnts.len);
+            for (mnts, 0..) |m, i| {
+                arr[i] = .{
+                    .destination = m.destination,
+                    .type = m.type,
+                    .source = m.source,
+                    .options = m.options,
+                };
+            }
+            exec_mounts = arr;
+        }
+    }
     const exec_config = executor.ExecConfig{
         .container_id = container_id,
         .rootfs = rootfs,
@@ -900,6 +949,7 @@ pub fn start(allocator: std.mem.Allocator, args: []const []const u8) !void {
         .hostname = hostname,
         .verbose = container.verbose,
         .rootfs_readonly = rootfs_readonly,
+        .mounts = exec_mounts,
     };
 
     // Create and run executor

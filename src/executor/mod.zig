@@ -33,6 +33,7 @@ pub const init = @import("init.zig");
 // Convenient type aliases
 pub const Executor = executor.Executor;
 pub const ExecConfig = executor.ExecConfig;
+pub const ExecConfigMount = executor.ExecConfigMount;
 pub const CloneFlags = executor.CloneFlags;
 pub const SyncPipe = executor.SyncPipe;
 

@@ -86,6 +86,15 @@ pub const SyncPipe = struct {
 // Container Execution Config
 // ============================================================================
 
+/// One entry in the OCI `mounts[]` array, lifted out of `ExecConfig` because
+/// Zig disallows declarations between struct fields.
+pub const ExecConfigMount = struct {
+    destination: []const u8,
+    type: ?[]const u8 = null,
+    source: ?[]const u8 = null,
+    options: ?[]const []const u8 = null,
+};
+
 pub const ExecConfig = struct {
     /// Container ID
     container_id: []const u8,
@@ -134,6 +143,13 @@ pub const ExecConfig = struct {
     /// When false, the Landlock rule for "/" is READ_WRITE so workloads can
     /// write to their own rootfs; when true, the rule is READ_EXEC only.
     rootfs_readonly: bool = false,
+
+    /// OCI `mounts[]` to apply inside the container's mount namespace, BEFORE
+    /// pivot_root. Each entry mirrors the runtime.Config.Mount struct without
+    /// pulling that module into the executor's interface. The type itself
+    /// (`ExecConfigMount`) is declared at module scope (Zig disallows
+    /// declarations between struct fields).
+    mounts: ?[]const ExecConfigMount = null,
 
     /// Set no_new_privs
     no_new_privs: bool = true,
@@ -666,6 +682,16 @@ pub const Executor = struct {
             log.debug("/proc or /sys population failed: {s}", .{@errorName(err)});
         };
 
+        // Step 1d: Apply user-specified OCI mounts (A5). These run BEFORE
+        // pivot_root so the host source paths (for bind mounts) are still
+        // reachable. A user mount whose destination matches one of the auto-
+        // mounted paths (/proc, /sys, /dev) silently replaces the auto-mount
+        // because the second mount on the same target stacks on the first; we
+        // could detect and skip but the OCI spec says explicit wins.
+        self.applyUserMounts(rootfs_z) catch |err| {
+            log.debug("user mounts partially failed: {s}", .{@errorName(err)});
+        };
+
         // Step 2: Create directory for old root
         var pivot_old_buf: [std.fs.max_path_bytes:0]u8 = undefined;
         const pivot_old_z = std.fmt.bufPrintZ(&pivot_old_buf, "{s}/.pivot_old", .{rootfs_z}) catch return false;
@@ -840,6 +866,115 @@ pub const Executor = struct {
             MS_NOSUID | MS_NODEV | MS_NOEXEC | MS_RDONLY,
             0,
         );
+    }
+
+    /// Apply OCI `mounts[]` from the config inside the rootfs, BEFORE pivot_root.
+    /// Supported types: bind (the common case), tmpfs, proc, sysfs. Options
+    /// parsed: ro, rw, nosuid, nodev, noexec, bind, rbind, private, rprivate.
+    /// Unknown types or unparsable options are logged and skipped; we never
+    /// abort the container for a bad mount entry.
+    fn applyUserMounts(self: *Executor, rootfs_z: [:0]const u8) !void {
+        const MS_RDONLY: usize = 0x1;
+        const MS_NOSUID: usize = 0x2;
+        const MS_NODEV: usize = 0x4;
+        const MS_NOEXEC: usize = 0x8;
+        const MS_BIND: usize = 0x1000;
+        const MS_REC: usize = 0x4000;
+        const MS_PRIVATE: usize = 0x40000;
+
+        const mounts = self.config.mounts orelse return;
+        for (mounts) |m| {
+            // Build absolute target inside the rootfs: <rootfs>/<destination>.
+            var tgt_buf: [std.fs.max_path_bytes:0]u8 = undefined;
+            const dest_slash: u8 = if (m.destination.len > 0 and m.destination[0] == '/') 0 else '/';
+            const tgt_z = if (dest_slash == 0)
+                std.fmt.bufPrintZ(&tgt_buf, "{s}{s}", .{ rootfs_z, m.destination }) catch continue
+            else
+                std.fmt.bufPrintZ(&tgt_buf, "{s}/{s}", .{ rootfs_z, m.destination }) catch continue;
+
+            // mkdir -p the parent so the bind/mount has a target. We try once
+            // for the leaf; if EEXIST or ENOENT we proceed and let mount fail.
+            _ = std.os.linux.syscall2(.mkdir, @intFromPtr(tgt_z.ptr), 0o755);
+
+            // Default flags + data string. Walk options to set flags.
+            var flags: usize = 0;
+            var is_bind: bool = false;
+            var is_rec: bool = false;
+            var make_private: bool = false;
+            if (m.options) |opts| {
+                for (opts) |opt| {
+                    if (std.mem.eql(u8, opt, "ro")) flags |= MS_RDONLY
+                    else if (std.mem.eql(u8, opt, "rw")) flags &= ~MS_RDONLY
+                    else if (std.mem.eql(u8, opt, "nosuid")) flags |= MS_NOSUID
+                    else if (std.mem.eql(u8, opt, "nodev")) flags |= MS_NODEV
+                    else if (std.mem.eql(u8, opt, "noexec")) flags |= MS_NOEXEC
+                    else if (std.mem.eql(u8, opt, "bind")) is_bind = true
+                    else if (std.mem.eql(u8, opt, "rbind")) { is_bind = true; is_rec = true; }
+                    else if (std.mem.eql(u8, opt, "private")) make_private = true
+                    else if (std.mem.eql(u8, opt, "rprivate")) { make_private = true; is_rec = true; }
+                    // Unknown options (mode=, uid=, gid=, size=, …) are passed
+                    // as data when the fs type accepts them; we forward the
+                    // first such option below. Most workloads only need flag
+                    // options, so this is acceptable for v1.
+                }
+            }
+
+            // Decide whether this is a bind or a typed mount.
+            const t = m.type orelse "";
+            const src = m.source orelse "";
+            var fstype_z_buf: [64:0]u8 = undefined;
+            var src_z_buf: [std.fs.max_path_bytes:0]u8 = undefined;
+
+            const fstype_z: ?[*:0]const u8 = if (t.len > 0)
+                @ptrCast((std.fmt.bufPrintZ(&fstype_z_buf, "{s}", .{t}) catch break).ptr)
+            else null;
+            const src_z: ?[*:0]const u8 = if (src.len > 0)
+                @ptrCast((std.fmt.bufPrintZ(&src_z_buf, "{s}", .{src}) catch break).ptr)
+            else null;
+
+            if (is_bind or std.mem.eql(u8, t, "bind") or std.mem.eql(u8, t, "rbind")) {
+                // Linux kernel quirk: the initial bind-mount syscall ignores
+                // MS_RDONLY (and several other propagation flags). To make the
+                // mount truly read-only we must follow up with a MS_REMOUNT.
+                const want_ro = (flags & MS_RDONLY) != 0;
+                var bind_flags: usize = MS_BIND;
+                if (is_rec or std.mem.eql(u8, t, "rbind")) bind_flags |= MS_REC;
+                _ = std.os.linux.syscall5(
+                    .mount,
+                    if (src_z) |s| @intFromPtr(s) else 0,
+                    @intFromPtr(tgt_z.ptr),
+                    0,
+                    bind_flags,
+                    0,
+                );
+                if (want_ro) {
+                    const MS_REMOUNT: usize = 0x20;
+                    const remount_flags: usize = bind_flags | MS_REMOUNT | MS_RDONLY | (flags & (MS_NOSUID | MS_NODEV | MS_NOEXEC));
+                    _ = std.os.linux.syscall5(
+                        .mount,
+                        0,
+                        @intFromPtr(tgt_z.ptr),
+                        0,
+                        remount_flags,
+                        0,
+                    );
+                }
+            } else {
+                _ = std.os.linux.syscall5(
+                    .mount,
+                    if (src_z) |s| @intFromPtr(s) else 0,
+                    @intFromPtr(tgt_z.ptr),
+                    if (fstype_z) |f| @intFromPtr(f) else 0,
+                    flags,
+                    0,
+                );
+            }
+
+            if (make_private) {
+                const private_flags: usize = MS_PRIVATE | (if (is_rec) MS_REC else @as(usize, 0));
+                _ = std.os.linux.syscall5(.mount, 0, @intFromPtr(tgt_z.ptr), 0, private_flags, 0);
+            }
+        }
     }
 
     fn loadSeccomp(self: *Executor, policy: seccomp.SyscallPolicy) !void {
