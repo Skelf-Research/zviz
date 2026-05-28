@@ -757,9 +757,17 @@ const container_allow_list = [_]i32{
     45, // recvfrom
     46, // sendmsg
     47, // recvmsg
+    48, // shutdown
     49, // bind
     50, // listen
+    51, // getsockname
+    52, // getpeername
     53, // socketpair
+    54, // setsockopt (SO_REUSEADDR etc.; needed by every server)
+    55, // getsockopt
+    288, // accept4 (modern glibc uses this instead of accept)
+    292, // dup3
+    293, // pipe2
     // Misc
     63, // uname
     99, // sysinfo
