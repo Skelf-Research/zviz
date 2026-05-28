@@ -150,8 +150,11 @@ fn benchOpen() void {
 }
 
 fn benchStat() void {
+    // stat(2) is x86_64-only at the syscall layer; aarch64 (and other
+    // asm-generic archs) require fstatat(AT_FDCWD,...). Use the portable
+    // wrapper so this benchmark builds on every architecture.
     var stat: std.os.linux.Stat = undefined;
-    _ = std.os.linux.stat("/", &stat);
+    _ = std.os.linux.fstatat(std.posix.AT.FDCWD, "/", &stat, 0);
 }
 
 fn benchClock() void {

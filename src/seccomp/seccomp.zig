@@ -72,8 +72,9 @@ const BPF = struct {
     const K = 0x00; // Use k
     const X = 0x08; // Use X register
 
-    // Architecture (x86_64)
+    // Architecture (linux/audit.h AUDIT_ARCH_* constants)
     const AUDIT_ARCH_X86_64 = 0xc000003e;
+    const AUDIT_ARCH_AARCH64 = 0xc00000b7;
 
     // seccomp_data offsets
     const OFFSET_NR = 0; // Syscall number
@@ -81,6 +82,34 @@ const BPF = struct {
     const OFFSET_INSTRUCTION_POINTER = 8;
     const OFFSET_ARGS = 16; // args[0]
 };
+
+/// Target architecture for the generated BPF filter. The seccomp_data the kernel
+/// presents includes the calling task's `arch` field; the filter compares it
+/// against the matching AUDIT_ARCH_* constant and kills the process on a
+/// mismatch. ZViz currently ships syscall number tables for x86_64 only;
+/// aarch64 is wired here so the BPF program emits the correct AUDIT_ARCH but
+/// the policy lists (src/schema/schema.zig) are not yet populated for it.
+pub const Arch = enum {
+    x86_64,
+    aarch64,
+
+    pub fn auditConst(self: Arch) u32 {
+        return switch (self) {
+            .x86_64 => BPF.AUDIT_ARCH_X86_64,
+            .aarch64 => BPF.AUDIT_ARCH_AARCH64,
+        };
+    }
+};
+
+/// Resolve the architecture of the running binary at compile time.
+pub fn currentArch() Arch {
+    const builtin = @import("builtin");
+    return switch (builtin.cpu.arch) {
+        .x86_64 => .x86_64,
+        .aarch64 => .aarch64,
+        else => @compileError("unsupported target architecture for ZViz seccomp filter"),
+    };
+}
 
 /// BPF program (for seccomp)
 pub const BpfProg = extern struct {
@@ -186,8 +215,15 @@ const AF_INET6: u32 = 10;
 const SOCKET_FILTER_INSNS: usize = 5;
 
 /// Generate BPF program from syscall policy
-/// When verbose=true, denied syscalls are routed through USER_NOTIF for logging
+/// Convenience wrapper that builds a BPF program targeting `currentArch()`.
+/// Existing call sites that pre-date the multi-arch dispatch can keep their
+/// signature unchanged; new call sites should prefer `generateBpfForArch`.
 pub fn generateBpf(allocator: std.mem.Allocator, policy: SyscallPolicy, verbose: bool) ![]BpfInsn {
+    return generateBpfForArch(allocator, policy, verbose, currentArch());
+}
+
+/// When verbose=true, denied syscalls are routed through USER_NOTIF for logging
+pub fn generateBpfForArch(allocator: std.mem.Allocator, policy: SyscallPolicy, verbose: bool, arch: Arch) ![]BpfInsn {
     log.debug("Generating BPF: {d} allow, {d} deny, {d} broker, verbose={}", .{
         policy.allow.len,
         policy.deny.len,
@@ -200,7 +236,7 @@ pub fn generateBpf(allocator: std.mem.Allocator, policy: SyscallPolicy, verbose:
 
     // Structure:
     // [0] Load arch
-    // [1] Check arch, fail if not x86_64
+    // [1] Check arch, fail if not the target arch (AUDIT_ARCH_X86_64 / _AARCH64)
     // [2] Load syscall nr
     // [3..3+allow] Check allow list → jump to RET ALLOW
     // [3+allow..3+allow+deny] Check deny list → jump to RET ERRNO
@@ -224,7 +260,7 @@ pub fn generateBpf(allocator: std.mem.Allocator, policy: SyscallPolicy, verbose:
 
     // Check architecture (kill if not x86_64)
     const kill_offset: u8 = @intCast(1 + total_checks + sf + 3); // All checks + socket filter + 3 returns before KILL
-    try builder.jeqK(BPF.AUDIT_ARCH_X86_64, 0, kill_offset);
+    try builder.jeqK(arch.auditConst(), 0, kill_offset);
 
     // Load syscall number
     try builder.ldAbsW(BPF.OFFSET_NR);

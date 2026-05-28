@@ -696,7 +696,9 @@ pub const Executor = struct {
         var pivot_old_buf: [std.fs.max_path_bytes:0]u8 = undefined;
         const pivot_old_z = std.fmt.bufPrintZ(&pivot_old_buf, "{s}/.pivot_old", .{rootfs_z}) catch return false;
 
-        const mkdir_result = std.os.linux.syscall2(.mkdir, @intFromPtr(pivot_old_z.ptr), 0o700);
+        // mkdir(2) is x86_64-only; the .mkdirat enum value exists on all archs.
+        const AT_FDCWD_U: usize = @bitCast(@as(isize, -100));
+        const mkdir_result = std.os.linux.syscall3(.mkdirat, AT_FDCWD_U, @intFromPtr(pivot_old_z.ptr), 0o700);
         const mkdir_signed: isize = @bitCast(mkdir_result);
         if (mkdir_signed < 0 and mkdir_signed != -17) { // -17 = EEXIST, which is fine
             log.debug("mkdir .pivot_old failed (errno: {d})", .{@as(u16, @truncate(@as(usize, @bitCast(-mkdir_signed))))});
@@ -713,7 +715,9 @@ pub const Executor = struct {
             const errno: u16 = @truncate(@as(usize, @bitCast(-@as(isize, @bitCast(pivot_result)))));
             log.debug("pivot_root failed (errno: {d})", .{errno});
             // Clean up mkdir
-            _ = std.os.linux.syscall1(.rmdir, @intFromPtr(pivot_old_z.ptr));
+            const AT_FDCWD_RM: usize = @bitCast(@as(isize, -100));
+            const AT_REMOVEDIR: usize = 0x200;
+            _ = std.os.linux.syscall3(.unlinkat, AT_FDCWD_RM, @intFromPtr(pivot_old_z.ptr), AT_REMOVEDIR);
             return false;
         }
 
@@ -725,7 +729,9 @@ pub const Executor = struct {
         _ = std.os.linux.syscall2(.umount2, @intFromPtr(old_root), MNT_DETACH);
 
         // Step 6: Remove the old root directory
-        _ = std.os.linux.syscall1(.rmdir, @intFromPtr(old_root));
+        const AT_FDCWD_RM2: usize = @bitCast(@as(isize, -100));
+        const AT_REMOVEDIR2: usize = 0x200;
+        _ = std.os.linux.syscall3(.unlinkat, AT_FDCWD_RM2, @intFromPtr(old_root), AT_REMOVEDIR2);
 
         // Step 7: Create the convenience symlinks under /dev once we're inside
         // the new root (the targets reference /proc/self/fd which only resolves
@@ -737,7 +743,9 @@ pub const Executor = struct {
             .{ .src = "/proc/self/fd", .tgt = "/dev/fd" },
         };
         for (links) |l| {
-            _ = std.os.linux.syscall2(.symlink, @intFromPtr(l.src), @intFromPtr(l.tgt));
+            // symlink(2) is x86_64-only; .symlinkat exists on all archs.
+            const AT_FDCWD_SY: usize = @bitCast(@as(isize, -100));
+            _ = std.os.linux.syscall3(.symlinkat, @intFromPtr(l.src), AT_FDCWD_SY, @intFromPtr(l.tgt));
         }
 
         return true;
@@ -761,7 +769,8 @@ pub const Executor = struct {
         const dev_z = std.fmt.bufPrintZ(&dev_buf, "{s}/dev", .{rootfs_z}) catch return error.PathTooLong;
 
         // Ensure <rootfs>/dev exists (may already; ignore EEXIST = -17)
-        const mkdir_r = std.os.linux.syscall2(.mkdir, @intFromPtr(dev_z.ptr), 0o755);
+        const AT_FDCWD_D: usize = @bitCast(@as(isize, -100));
+        const mkdir_r = std.os.linux.syscall3(.mkdirat, AT_FDCWD_D, @intFromPtr(dev_z.ptr), 0o755);
         const mkdir_s: isize = @bitCast(mkdir_r);
         if (mkdir_s < 0 and mkdir_s != -17) {
             log.debug("mkdir {s} failed (errno {d})", .{ dev_z, @as(u16, @truncate(@as(usize, @bitCast(-mkdir_s)))) });
@@ -830,7 +839,8 @@ pub const Executor = struct {
 
         // /proc
         const proc_path = std.fmt.bufPrintZ(&path_buf, "{s}/proc", .{rootfs_z}) catch return;
-        const mk_p = std.os.linux.syscall2(.mkdir, @intFromPtr(proc_path.ptr), 0o755);
+        const AT_FDCWD_P: usize = @bitCast(@as(isize, -100));
+        const mk_p = std.os.linux.syscall3(.mkdirat, AT_FDCWD_P, @intFromPtr(proc_path.ptr), 0o755);
         if (@as(isize, @bitCast(mk_p)) < 0 and @as(isize, @bitCast(mk_p)) != -17) {
             log.debug("mkdir <rootfs>/proc failed", .{});
         }
@@ -852,7 +862,8 @@ pub const Executor = struct {
         // /sys
         var path_buf2: [std.fs.max_path_bytes:0]u8 = undefined;
         const sys_path = std.fmt.bufPrintZ(&path_buf2, "{s}/sys", .{rootfs_z}) catch return;
-        const mk_s = std.os.linux.syscall2(.mkdir, @intFromPtr(sys_path.ptr), 0o755);
+        const AT_FDCWD_S: usize = @bitCast(@as(isize, -100));
+        const mk_s = std.os.linux.syscall3(.mkdirat, AT_FDCWD_S, @intFromPtr(sys_path.ptr), 0o755);
         if (@as(isize, @bitCast(mk_s)) < 0 and @as(isize, @bitCast(mk_s)) != -17) {
             log.debug("mkdir <rootfs>/sys failed", .{});
         }
@@ -894,7 +905,8 @@ pub const Executor = struct {
 
             // mkdir -p the parent so the bind/mount has a target. We try once
             // for the leaf; if EEXIST or ENOENT we proceed and let mount fail.
-            _ = std.os.linux.syscall2(.mkdir, @intFromPtr(tgt_z.ptr), 0o755);
+            const AT_FDCWD_U: usize = @bitCast(@as(isize, -100));
+            _ = std.os.linux.syscall3(.mkdirat, AT_FDCWD_U, @intFromPtr(tgt_z.ptr), 0o755);
 
             // Default flags + data string. Walk options to set flags.
             var flags: usize = 0;
