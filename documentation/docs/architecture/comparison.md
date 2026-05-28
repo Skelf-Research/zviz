@@ -11,7 +11,7 @@ ZViz achieves gVisor-equivalent security outcomes without a userspace kernel. Th
 | Performance overhead | Baseline | 50-100% (all syscalls emulated) | 5-10% (only brokered syscalls) | 15-30% (VM exit cost) | 10-20% (VM exit cost) |
 | Memory overhead | ~0 | ~50MB (Sentry process) | ~2MB (static binary) | ~128MB (guest kernel + OS) | ~5MB (minimal guest) |
 | Cold start | ~50ms | ~200ms | ~8ms | ~1s | ~125ms |
-| Linux compatibility | Full | Limited (not all syscalls) | Near-full (90 syscalls native) | Full | Full |
+| Linux compatibility | Full | Limited (not all syscalls) | Near-full (130 syscalls native) | Full | Full |
 | Rootless support | Yes | Partial | Yes | No (requires KVM) | No (requires KVM) |
 | Hardware requirements | None | None | None | VT-x/AMD-V | VT-x/AMD-V |
 
@@ -26,8 +26,8 @@ gVisor:
 
 ZViz:
   Application → Seccomp BPF filter
-                    ├── ALLOW (90 syscalls) → direct to kernel
-                    ├── DENY  (22 syscalls) → immediate EPERM
+                    ├── ALLOW (130 syscalls) → direct to kernel
+                    ├── DENY  (24 syscalls) → immediate EPERM
                     └── BROKER (mediated)   → Zig broker → kernel
 
 runc:
@@ -259,7 +259,7 @@ mount("proc", ...);      # EPERM - no filesystem manipulation
 
 ### ZViz Limitations vs gVisor
 
-1. **Kernel vulnerability exposure**: ZViz allows 90 syscalls to reach the host kernel directly. gVisor's Sentry means only ~70 reach the host. However, ZViz's 90 are well-audited safe syscalls (read, write, mmap, etc.) with minimal kernel attack surface.
+1. **Kernel vulnerability exposure**: ZViz allows 130 syscalls to reach the host kernel directly. gVisor's Sentry means only ~70 reach the host. However, ZViz's 90 are well-audited safe syscalls (read, write, mmap, etc.) with minimal kernel attack surface.
 
 2. **No syscall argument filtering on fast-path**: Allowed syscalls in ZViz go to the kernel without argument inspection. gVisor can inspect arguments for all syscalls. For ZViz, argument inspection happens only for brokered syscalls.
 

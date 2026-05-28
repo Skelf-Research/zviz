@@ -1,296 +1,112 @@
 # Your First Container
 
-This tutorial walks you through creating and running an isolated container step by step, explaining what happens at each stage.
+This tutorial walks you through running a real workload under ZViz, end-to-end.
 
 ## Prerequisites
 
-- ZViz installed ([Installation Guide](installation.md))
-- Root access or appropriate capabilities
-- Basic familiarity with containers
+- ZViz built from source: `zig build -Doptimize=ReleaseSafe`. Resulting binary at `./zig-out/bin/zviz`.
+- Docker (we use `docker export` to build the rootfs; once you have a rootfs, ZViz never talks to Docker again).
+- On Ubuntu 24.04+ (or any kernel with `kernel.apparmor_restrict_unprivileged_userns=1`), one of:
+   - Install the bundled AppArmor profile once: `sudo install -m 0644 packaging/apparmor/zviz /etc/apparmor.d/zviz && sudo apparmor_parser -r /etc/apparmor.d/zviz`.
+   - Or temporarily disable the restriction: `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`.
+  Without one of these, `pivot_root` fails inside the unprivileged user namespace and ZViz falls back to chdir-only filesystem isolation, which the OCI spec does not consider a real chroot.
+- Rootless mode is the default. No `sudo` required for `zviz run` itself.
 
-## Step 1: Create a Container Bundle
+## 1. Build a bundle
 
-A container bundle is a directory containing:
-
-- `rootfs/` — The container's filesystem
-- `config.json` — OCI runtime specification
-
-### Create the Directory Structure
-
-```bash
-mkdir -p tutorial/rootfs
-cd tutorial
-```
-
-### Populate the Rootfs
-
-We'll use Alpine Linux as a minimal base:
+A bundle is a directory with two things: the container's `rootfs/` and an OCI `config.json` describing the workload. We will build one for `redis:alpine`.
 
 ```bash
-# Using Docker to export a rootfs
-docker export $(docker create alpine:latest) | tar -C rootfs -xf -
-
-# Verify the rootfs
-ls rootfs/
-# bin  dev  etc  home  lib  media  mnt  opt  proc  root  run  sbin  srv  sys  tmp  usr  var
+mkdir -p ~/zviz-redis/rootfs
+docker create --name extract redis:alpine
+docker export extract | tar -C ~/zviz-redis/rootfs -xf -
+docker rm extract
 ```
 
-### Generate the OCI Spec
+`docker export` flattens the image's filesystem into a tar; we untar it into `rootfs/`. This is a one-time per-image cost. The Docker daemon is not involved in any later step.
 
-```bash
-zviz spec
-```
+## 2. Write the config
 
-This creates `config.json` with secure defaults:
+The minimum-viable `config.json` says which command to run, which user to run it as, and which Linux namespaces to unshare. Save this to `~/zviz-redis/config.json`:
 
 ```json
 {
   "ociVersion": "1.0.2",
   "process": {
-    "terminal": true,
-    "user": { "uid": 0, "gid": 0 },
-    "args": ["/bin/sh"],
+    "terminal": false,
+    "user": {"uid": 0, "gid": 0},
+    "args": ["/usr/local/bin/redis-server",
+             "--save", "", "--appendonly", "no",
+             "--protected-mode", "no",
+             "--port", "6379", "--bind", "127.0.0.1"],
     "env": ["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"],
     "cwd": "/"
   },
-  "root": {
-    "path": "rootfs",
-    "readonly": true
-  },
-  ...
+  "root": {"path": "rootfs", "readonly": false},
+  "hostname": "my-redis",
+  "linux": {
+    "namespaces": [
+      {"type": "pid"},
+      {"type": "mount"},
+      {"type": "ipc"},
+      {"type": "uts"}
+    ]
+  }
 }
 ```
 
-## Step 2: Create the Container
+You do **not** need a `mounts[]` entry for `/proc`, `/sys`, or `/dev` — the runtime auto-mounts those (procfs at `/proc`, sysfs read-only at `/sys`, a private tmpfs at `/dev` populated with the standard char devices and `std{in,out,err}` symlinks).
 
-```bash
-sudo zviz create my-first-container .
-```
+You **can** add a `mounts[]` entry to bind-mount host data in:
 
-This command:
-
-1. **Sets up namespaces** (user, PID, mount, network, IPC)
-2. **Applies seccomp filter** with the default profile
-3. **Configures cgroups** for resource limits
-4. **Loads LSM policy** (AppArmor/SELinux if available)
-5. **Prepares the rootfs** with bind mounts
-
-Check the container state:
-
-```bash
-zviz state my-first-container
-```
-
-Output:
 ```json
-{
-  "ociVersion": "1.0.2",
-  "id": "my-first-container",
-  "status": "created",
-  "pid": 0,
-  "bundle": "/home/user/tutorial"
-}
+"mounts": [
+  {"destination": "/data", "source": "/srv/redis-state", "type": "bind", "options": ["rw", "rbind"]}
+]
 ```
 
-## Step 3: Start the Container
+For read-only data use `"options": ["ro", "rbind"]` — the runtime emits the kernel's mandatory second `MS_REMOUNT|MS_RDONLY` syscall for you (Linux silently ignores `MS_RDONLY` on the initial bind mount; missing the remount is the most common "I asked for ro and got rw" foot-gun).
+
+## 3. Run it
 
 ```bash
-sudo zviz start my-first-container
+./zig-out/bin/zviz run my-redis ~/zviz-redis
 ```
 
-The container is now running. Check its state:
+The first time, the verbose logs make the layer ordering visible:
+
+```
+[INFO] Writing ID maps for pid <host_pid> (uid=<your_uid>, gid=<your_gid>)
+[INFO] Wrote setgroups deny
+[INFO] Wrote uid_map: 0 <your_uid> 1
+[INFO] Wrote gid_map: 0 <your_gid> 1
+[INFO] Dropping capabilities, keeping 0
+[INFO] Capabilities dropped
+[INFO] Applying Landlock rules (2 paths)
+[INFO] Landlock ruleset enforced
+[INFO] Loading seccomp filter with 168 instructions
+[INFO] Seccomp filter loaded successfully
+[INFO] Container started with PID <host_pid>
+1:M 28 May 2026 11:56:44.626 * monotonic clock: POSIX clock_gettime
+1:M 28 May 2026 11:56:44.627 * Running mode=standalone, port=6379.
+1:M 28 May 2026 11:56:44.627 * Ready to accept connections tcp
+```
+
+In another terminal:
 
 ```bash
-zviz state my-first-container
+redis-cli -h 127.0.0.1 -p 6379 ping
+# PONG
 ```
 
-Output:
-```json
-{
-  "ociVersion": "1.0.2",
-  "id": "my-first-container",
-  "status": "running",
-  "pid": 12345,
-  "bundle": "/home/user/tutorial"
-}
-```
+To stop the container, send `^C` to the foreground `zviz run` (or, from elsewhere, `kill -INT <pid>`). The runtime tears down the cgroup, removes the per-container mount namespace (so the tmpfs at `/dev` and the bind mounts disappear), and exits with the workload's exit code.
 
-## Step 4: Execute Commands
+## What you just exercised
 
-Run commands inside the container:
+The container is rootless (your invoking user mapped to uid 0 inside its own user namespace), pid 1 of a fresh pid namespace, runs under a 168-instruction seccomp filter that blocks `ptrace`, `mount`, `unshare`, `bpf`, `io_uring_setup`/`enter` and 19 other dangerous syscalls, and has Landlock active over its rootfs. The redis-server binary is dynamically linked against musl; the dynamic loader resolves it normally because the rootfs is the real `redis:alpine` filesystem under `pivot_root`.
 
-```bash
-# Interactive shell
-sudo zviz exec my-first-container /bin/sh
+## Next steps
 
-# Single command
-sudo zviz exec my-first-container /bin/cat /etc/os-release
-```
-
-## Step 5: Explore Security Isolation
-
-### Test Namespace Isolation
-
-```bash
-# Inside the container, check PID namespace
-sudo zviz exec my-first-container /bin/ps aux
-# Only sees processes in this container
-
-# Check user namespace
-sudo zviz exec my-first-container /bin/id
-# uid=0(root) gid=0(root) - but this is NOT host root!
-```
-
-### Test Syscall Filtering
-
-```bash
-# Try to mount (should fail)
-sudo zviz exec my-first-container /bin/mount -t proc proc /proc
-# mount: permission denied
-
-# Try to load a kernel module (should fail)
-sudo zviz exec my-first-container /bin/sh -c "insmod /tmp/evil.ko"
-# Operation not permitted
-
-# Try to reboot (should fail)
-sudo zviz exec my-first-container /bin/reboot
-# Operation not permitted
-```
-
-### Test Filesystem Isolation
-
-```bash
-# Rootfs is read-only by default
-sudo zviz exec my-first-container /bin/touch /test
-# touch: /test: Read-only file system
-
-# /tmp is writable
-sudo zviz exec my-first-container /bin/sh -c "echo hello > /tmp/test && cat /tmp/test"
-# hello
-
-# Can't access host files
-sudo zviz exec my-first-container /bin/ls /host
-# ls: /host: No such file or directory
-```
-
-### Test Network Isolation
-
-```bash
-# By default, network is isolated
-sudo zviz exec my-first-container /bin/ping -c 1 8.8.8.8
-# Network is unreachable (by default)
-
-# Local loopback works
-sudo zviz exec my-first-container /bin/ping -c 1 127.0.0.1
-# PING 127.0.0.1: 64 bytes from 127.0.0.1
-```
-
-## Step 6: Monitor Resources
-
-View container resource usage:
-
-```bash
-# Using cgroups
-cat /sys/fs/cgroup/zviz/my-first-container/memory.current
-cat /sys/fs/cgroup/zviz/my-first-container/cpu.stat
-
-# Using zviz metrics
-zviz metrics
-```
-
-## Step 7: Stop and Delete
-
-```bash
-# Stop the container
-sudo zviz kill my-first-container
-
-# Check state
-zviz state my-first-container
-# status: "stopped"
-
-# Delete the container
-sudo zviz delete my-first-container
-
-# Verify deletion
-zviz list
-# (empty)
-```
-
-## Understanding the Security Layers
-
-Let's see what each layer contributed:
-
-### Layer A: Containment
-
-```bash
-# Namespaces isolated the container
-ls -la /proc/self/ns/
-# user -> user:[4026532456]  (different from host)
-# pid -> pid:[4026532458]
-# mnt -> mnt:[4026532459]
-# net -> net:[4026532461]
-# ipc -> ipc:[4026532460]
-
-# Capabilities were dropped
-capsh --print
-# Current: = (empty - no capabilities)
-```
-
-### Layer B: Syscall Gate
-
-The seccomp filter classified syscalls into three categories:
-
-| Category | Example | Action |
-|----------|---------|--------|
-| **Allow** | `read`, `write`, `exit` | Pass through |
-| **Deny** | `mount`, `bpf`, `reboot` | Return EPERM |
-| **Broker** | `openat`, `socket`, `clone` | Mediate via broker |
-
-### Layer C: Object Policy
-
-AppArmor/SELinux/Landlock restricted file access:
-
-```
-# Example Landlock rules applied
-allow read: /usr/**, /lib/**, /etc/**
-allow write: /tmp/**, /var/tmp/**
-deny: /proc/sys/**, /sys/**
-```
-
-### Layer D: Resource Control
-
-cgroups limited resources:
-
-```bash
-cat /sys/fs/cgroup/zviz/my-first-container/memory.max
-# 268435456 (256MB)
-
-cat /sys/fs/cgroup/zviz/my-first-container/pids.max
-# 100
-```
-
-### Layer E: Network Policy
-
-nftables rules controlled network access:
-
-```bash
-# Example rules
-nft list ruleset | grep zviz
-# chain zviz_my-first-container { type filter hook output priority 0; policy drop; }
-```
-
-## Next Steps
-
-Now that you understand the basics:
-
-- [Create custom profiles](../user-guide/profile-authoring.md)
-- [Use built-in profiles](../user-guide/builtin-profiles.md)
-- [Set up Kubernetes integration](../operator-guide/kubernetes.md)
-- [Learn about the architecture](../architecture/index.md)
-
-## Clean Up
-
-```bash
-cd ..
-rm -rf tutorial
-```
+- [`comparison.md`](../architecture/comparison.md) — how the runtime stacks up against runc and gVisor on syscall latency, cold start, memory, and redis throughput.
+- [`enforcement-model.md`](../architecture/enforcement-model.md) — the full layer-by-layer description of what each enforcement step does and why the order matters.
+- [`threat-model.md`](../architecture/threat-model.md) — the trust boundary and what is in/out of scope.

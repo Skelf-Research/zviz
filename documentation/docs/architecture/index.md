@@ -44,7 +44,7 @@ ZViz reaches the same security outcomes without emulating Linux by:
 │  │    ┌──────────────────┬────────────────┬──────────────────┐   │  │
 │  │    │     ALLOW        │     DENY       │   USER_NOTIF     │   │  │
 │  │    │   (native)       │  (EPERM)       │   (mediated)     │   │  │
-│  │    │   90 syscalls    │  22 syscalls   │   5 syscalls     │   │  │
+│  │    │   130 syscalls   │  24 syscalls   │   5 syscalls     │   │  │
 │  │    └──────────────────┴────────────────┴────────┬─────────┘   │  │
 │  └─────────────────────────────────────────────────│─────────────┘  │
 │                                                    │                 │
@@ -194,7 +194,7 @@ Profile YAML → Policy Compiler → Seccomp BPF + Landlock rules + cgroup limit
 ### Why ZViz is Fast
 
 1. **Minimal brokered set** - Only 5 syscalls go through the broker
-2. **BPF fast path** - 90 common syscalls execute at native speed
+2. **BPF fast path** - 130 common syscalls execute at native speed
 3. **No emulation** - Allowed syscalls hit the kernel directly
 
 ## When to Use gVisor Instead
