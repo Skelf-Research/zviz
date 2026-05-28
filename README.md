@@ -5,6 +5,14 @@
 
 **Container isolation for code you can't trust but have to run.**
 
+ZViz is an OCI-compatible Zig container runtime that takes a *selective denial*
+approach: 132 syscalls reach the host kernel at native speed, 24 dangerous ones
+are blocked at the seccomp layer before any kernel code runs, and one
+(`socket`) is argument-filtered inline. No userspace kernel, no emulation,
+no daemon. The default profile drops all 41 Linux capabilities, applies a
+Landlock ruleset, mounts `/proc`/`/sys`/`/dev` privately in the container, and
+runs the workload as PID 1 of a fresh user + PID + mount + IPC + UTS namespace.
+
 ---
 
 ## The Problem
@@ -36,22 +44,43 @@ Allowed syscalls execute at native kernel speed. Dangerous syscalls get blocked 
 ## Quick Start
 
 ```bash
-# Build (requires Zig 0.15.0+, Linux 5.13+)
+# 1. Build (requires Zig 0.15.0+, Linux 5.13+)
 git clone https://github.com/AIntheSky/zviz.git
 cd zviz && zig build -Doptimize=ReleaseSafe
 
-# Run a container
-./zig-out/bin/zviz run my-container /path/to/bundle
+# 2. (Ubuntu 24.04+) install the AppArmor profile that grants the userns
+#    permission pivot_root needs; without this the kernel sysctl
+#    apparmor_restrict_unprivileged_userns=1 blocks the bind mount and
+#    zviz falls back to chdir-only filesystem isolation.
+sudo install -m 0644 packaging/apparmor/zviz /etc/apparmor.d/zviz
+sudo apparmor_parser -r /etc/apparmor.d/zviz
 
-# Run with verbose mode (see which syscalls get blocked)
-./zig-out/bin/zviz --verbose run my-container /path/to/bundle
+# 3. Build an OCI bundle (rootfs + config.json). Any image works:
+mkdir -p ~/zviz-bundle/rootfs
+docker create --name extract redis:alpine
+docker export extract | tar -C ~/zviz-bundle/rootfs -xf -
+docker rm extract
+cat > ~/zviz-bundle/config.json <<EOF
+{ "ociVersion":"1.0.2",
+  "process":{"terminal":false,"user":{"uid":0,"gid":0},
+    "args":["/usr/local/bin/redis-server","--save","","--protected-mode","no"],
+    "env":["PATH=/usr/local/bin:/usr/bin:/bin"],"cwd":"/"},
+  "root":{"path":"rootfs","readonly":false},"hostname":"my-container",
+  "linux":{"namespaces":[
+    {"type":"pid"},{"type":"mount"},{"type":"ipc"},{"type":"uts"}]} }
+EOF
 
-# Use a workload-specific profile
-./zig-out/bin/zviz --profile=web-server run my-api /path/to/bundle
-
-# Run the full security + performance test suite
-./demo.sh --all
+# 4. Run it
+./zig-out/bin/zviz run my-container ~/zviz-bundle
+# --verbose logs every blocked syscall; --profile=<name> selects a built-in profile
 ```
+
+ZViz auto-mounts the standard pseudo-filesystems inside the bundle's rootfs:
+`/proc` (procfs, nosuid+nodev+noexec), `/sys` (sysfs, read-only), and
+`/dev` (private tmpfs with bind-mounted `/dev/null`, `zero`, `full`, `random`,
+`urandom`, `tty` and `/dev/std{in,out,err}` symlinks). No mount entries are
+required in `config.json` for this; a user-provided `mounts[]` entry overrides
+the auto-mount for that path.
 
 ## AI Agents & Agentic Workloads
 
