@@ -629,7 +629,6 @@ pub const Executor = struct {
 
     /// Try pivot_root approach: bind-mount rootfs, pivot, unmount old root
     fn tryPivotRoot(self: *Executor, rootfs_z: [:0]const u8) bool {
-        _ = self;
         const MS_BIND: usize = 0x1000;
         const MS_REC: usize = 0x4000;
         const MNT_DETACH: usize = 0x2;
@@ -648,6 +647,24 @@ pub const Executor = struct {
             log.debug("bind mount failed (errno: {d})", .{errno});
             return false;
         }
+
+        // Step 1b: Populate /dev inside the rootfs BEFORE pivot_root. We mount
+        // a private tmpfs at <rootfs>/dev and bind-mount the host's character
+        // devices onto empty files inside it. Doing this pre-pivot lets us
+        // reach the host's /dev/* by absolute path; after pivot_root the host
+        // tree is gone. Errors are non-fatal: a workload that doesn't use
+        // /dev/null still runs.
+        self.populateDev(rootfs_z) catch |err| {
+            log.debug("/dev population partially failed: {s}", .{@errorName(err)});
+        };
+
+        // Step 1c: Mount /proc and /sys inside the rootfs BEFORE pivot_root.
+        // procfs mount under an unprivileged userns wants the calling task to
+        // still see an ancestor procfs at mount time; doing this after
+        // pivot_root (when the host tree is gone) returns EPERM.
+        self.populateKernelFs(rootfs_z) catch |err| {
+            log.debug("/proc or /sys population failed: {s}", .{@errorName(err)});
+        };
 
         // Step 2: Create directory for old root
         var pivot_old_buf: [std.fs.max_path_bytes:0]u8 = undefined;
@@ -684,7 +701,145 @@ pub const Executor = struct {
         // Step 6: Remove the old root directory
         _ = std.os.linux.syscall1(.rmdir, @intFromPtr(old_root));
 
+        // Step 7: Create the convenience symlinks under /dev once we're inside
+        // the new root (the targets reference /proc/self/fd which only resolves
+        // post-pivot when /proc is reachable as a relative path).
+        const links = [_]struct { src: [*:0]const u8, tgt: [*:0]const u8 }{
+            .{ .src = "/proc/self/fd/0", .tgt = "/dev/stdin" },
+            .{ .src = "/proc/self/fd/1", .tgt = "/dev/stdout" },
+            .{ .src = "/proc/self/fd/2", .tgt = "/dev/stderr" },
+            .{ .src = "/proc/self/fd", .tgt = "/dev/fd" },
+        };
+        for (links) |l| {
+            _ = std.os.linux.syscall2(.symlink, @intFromPtr(l.src), @intFromPtr(l.tgt));
+        }
+
         return true;
+    }
+
+    /// Populate /dev inside the rootfs by mounting a tmpfs there and
+    /// bind-mounting the standard host character devices onto empty files.
+    /// Called from `tryPivotRoot` BEFORE the actual pivot so the host's
+    /// `/dev/*` paths are still reachable.
+    fn populateDev(self: *Executor, rootfs_z: [:0]const u8) !void {
+        _ = self;
+        const MS_BIND: usize = 0x1000;
+        const MS_NOSUID: usize = 0x2;
+        const O_WRONLY: u32 = 0o1;
+        const O_CREAT: u32 = 0o100;
+        const O_CLOEXEC: u32 = 0o2000000;
+        const tmpfs_data: [*:0]const u8 = "mode=755,size=64k";
+
+        // Build "<rootfs>/dev"
+        var dev_buf: [std.fs.max_path_bytes:0]u8 = undefined;
+        const dev_z = std.fmt.bufPrintZ(&dev_buf, "{s}/dev", .{rootfs_z}) catch return error.PathTooLong;
+
+        // Ensure <rootfs>/dev exists (may already; ignore EEXIST = -17)
+        const mkdir_r = std.os.linux.syscall2(.mkdir, @intFromPtr(dev_z.ptr), 0o755);
+        const mkdir_s: isize = @bitCast(mkdir_r);
+        if (mkdir_s < 0 and mkdir_s != -17) {
+            log.debug("mkdir {s} failed (errno {d})", .{ dev_z, @as(u16, @truncate(@as(usize, @bitCast(-mkdir_s)))) });
+        }
+
+        // Mount a fresh tmpfs at <rootfs>/dev so the bind targets are private
+        // to this container and disappear on exit.
+        const tmpfs_type: [*:0]const u8 = "tmpfs";
+        const tmpfs_src: [*:0]const u8 = "tmpfs";
+        _ = std.os.linux.syscall5(
+            .mount,
+            @intFromPtr(tmpfs_src),
+            @intFromPtr(dev_z.ptr),
+            @intFromPtr(tmpfs_type),
+            MS_NOSUID,
+            @intFromPtr(tmpfs_data),
+        );
+
+        // Bind-mount each host device onto an empty file in the new tmpfs.
+        const devs = [_][]const u8{ "null", "zero", "full", "random", "urandom", "tty" };
+        for (devs) |name| {
+            var host_buf: [64:0]u8 = undefined;
+            const host_z = std.fmt.bufPrintZ(&host_buf, "/dev/{s}", .{name}) catch continue;
+
+            var tgt_buf: [std.fs.max_path_bytes:0]u8 = undefined;
+            const tgt_z = std.fmt.bufPrintZ(&tgt_buf, "{s}/{s}", .{ dev_z, name }) catch continue;
+
+            // Create empty target file (bind-mount source over destination).
+            const fd_r = std.os.linux.syscall4(
+                .openat,
+                @as(usize, @bitCast(@as(isize, -100))), // AT_FDCWD
+                @intFromPtr(tgt_z.ptr),
+                @as(usize, O_WRONLY | O_CREAT | O_CLOEXEC),
+                @as(usize, 0o644),
+            );
+            const fd_s: isize = @bitCast(fd_r);
+            if (fd_s >= 0) {
+                _ = std.os.linux.syscall1(.close, @as(usize, @bitCast(fd_s)));
+            }
+
+            _ = std.os.linux.syscall5(
+                .mount,
+                @intFromPtr(host_z.ptr),
+                @intFromPtr(tgt_z.ptr),
+                0,
+                MS_BIND,
+                0,
+            );
+        }
+    }
+
+    /// Mount /proc and /sys into <rootfs>/proc and <rootfs>/sys BEFORE
+    /// pivot_root. Mounting procfs after pivot_root returns EPERM under recent
+    /// kernels' unprivileged-userns check because the calling task can no
+    /// longer see an ancestor procfs to satisfy the visibility prerequisite.
+    /// Flags reduce privilege: nosuid+nodev+noexec for procfs; same plus
+    /// MS_RDONLY for sysfs.
+    fn populateKernelFs(self: *Executor, rootfs_z: [:0]const u8) !void {
+        _ = self;
+        const MS_NOSUID: usize = 0x2;
+        const MS_NODEV: usize = 0x4;
+        const MS_NOEXEC: usize = 0x8;
+        const MS_RDONLY: usize = 0x1;
+
+        var path_buf: [std.fs.max_path_bytes:0]u8 = undefined;
+
+        // /proc
+        const proc_path = std.fmt.bufPrintZ(&path_buf, "{s}/proc", .{rootfs_z}) catch return;
+        const mk_p = std.os.linux.syscall2(.mkdir, @intFromPtr(proc_path.ptr), 0o755);
+        if (@as(isize, @bitCast(mk_p)) < 0 and @as(isize, @bitCast(mk_p)) != -17) {
+            log.debug("mkdir <rootfs>/proc failed", .{});
+        }
+        const proc_src: [*:0]const u8 = "proc";
+        const proc_fs: [*:0]const u8 = "proc";
+        const proc_r = std.os.linux.syscall5(
+            .mount,
+            @intFromPtr(proc_src),
+            @intFromPtr(proc_path.ptr),
+            @intFromPtr(proc_fs),
+            MS_NOSUID | MS_NODEV | MS_NOEXEC,
+            0,
+        );
+        if (@as(isize, @bitCast(proc_r)) < 0) {
+            const errno: u16 = @truncate(@as(usize, @bitCast(-@as(isize, @bitCast(proc_r)))));
+            log.debug("mount /proc failed (errno: {d})", .{errno});
+        }
+
+        // /sys
+        var path_buf2: [std.fs.max_path_bytes:0]u8 = undefined;
+        const sys_path = std.fmt.bufPrintZ(&path_buf2, "{s}/sys", .{rootfs_z}) catch return;
+        const mk_s = std.os.linux.syscall2(.mkdir, @intFromPtr(sys_path.ptr), 0o755);
+        if (@as(isize, @bitCast(mk_s)) < 0 and @as(isize, @bitCast(mk_s)) != -17) {
+            log.debug("mkdir <rootfs>/sys failed", .{});
+        }
+        const sys_src: [*:0]const u8 = "sysfs";
+        const sys_fs: [*:0]const u8 = "sysfs";
+        _ = std.os.linux.syscall5(
+            .mount,
+            @intFromPtr(sys_src),
+            @intFromPtr(sys_path.ptr),
+            @intFromPtr(sys_fs),
+            MS_NOSUID | MS_NODEV | MS_NOEXEC | MS_RDONLY,
+            0,
+        );
     }
 
     fn loadSeccomp(self: *Executor, policy: seccomp.SyscallPolicy) !void {
