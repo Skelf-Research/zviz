@@ -1,0 +1,28 @@
+# AppArmor profile for the ZViz container runtime.
+#
+# Modern Ubuntu/Debian kernels ship `kernel.apparmor_restrict_unprivileged_userns=1`
+# which blocks unprivileged user namespaces from performing the bind mounts
+# required for `pivot_root`. Docker/Podman/runc ship equivalent profiles; without
+# this profile (or `sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`)
+# ZViz falls back to chdir-only filesystem isolation, which the OCI spec does
+# not consider a real chroot.
+#
+# Install once with:
+#   sudo install -m 0644 packaging/apparmor/zviz /etc/apparmor.d/zviz
+#   sudo apparmor_parser -r /etc/apparmor.d/zviz
+#
+# The profile is deliberately minimal: it only grants the `userns` permission
+# the kernel checks before allowing the mount/pivot_root operations zviz
+# performs inside its own user namespace. Capability and file mediation are
+# left to seccomp + Landlock + the kernel's own credential checks.
+
+abi <abi/4.0>,
+include <tunables/global>
+
+profile zviz /usr/local/bin/zviz flags=(unconfined) {
+    userns,
+}
+
+profile zviz-dev /home/*/Code/zigviz/zig-out/bin/zviz flags=(unconfined) {
+    userns,
+}

@@ -129,8 +129,11 @@ pub const ExecConfig = struct {
     /// Console socket path for OCI console protocol
     console_socket: ?[]const u8 = null,
 
-    /// Make rootfs readonly
-    rootfs_readonly: bool = true,
+    /// Make rootfs readonly. Default false to match OCI's `root.readonly: false`
+    /// default (the spec value runtime.zig parses into config.root.readonly).
+    /// When false, the Landlock rule for "/" is READ_WRITE so workloads can
+    /// write to their own rootfs; when true, the rule is READ_EXEC only.
+    rootfs_readonly: bool = false,
 
     /// Set no_new_privs
     no_new_privs: bool = true,
@@ -343,6 +346,40 @@ pub const Executor = struct {
             try p.wait();
         }
 
+        // Second fork: required so the WORKLOAD runs as pid 1 in the NEW pid
+        // namespace. `unshare(CLONE_NEWPID)` only puts FUTURE children into the
+        // new pidns; the calling task stays in the old pidns. Without this fork,
+        // the workload's first fork() becomes pid 1 of the new pidns; when it
+        // exits, the kernel marks the pidns "dying" and the workload's next
+        // fork() returns -ENOMEM ("init process of pidns terminated"). With this
+        // fork, the workload itself is pid 1 and stays alive for the container's
+        // lifetime, so its children can come and go freely.
+        if (self.isRootless()) {
+            const f_raw = std.os.linux.fork();
+            const f_signed: isize = @bitCast(f_raw);
+            if (f_signed < 0) {
+                log.err("intermediate fork failed: {d}", .{f_signed});
+                _ = std.os.linux.syscall1(.exit_group, 1);
+                unreachable;
+            }
+            if (f_signed > 0) {
+                // intermediate parent: reap the grandchild and exit with its code.
+                // This task lives only as a pidns shim; no further policy applies
+                // (seccomp/Landlock are loaded below by the grandchild).
+                var status: u32 = 0;
+                _ = std.os.linux.wait4(@intCast(f_signed), &status, 0, null);
+                var code: u32 = 1;
+                if (std.os.linux.W.IFEXITED(status)) {
+                    code = std.os.linux.W.EXITSTATUS(status);
+                } else if (std.os.linux.W.IFSIGNALED(status)) {
+                    code = 128 + std.os.linux.W.TERMSIG(status);
+                }
+                _ = std.os.linux.syscall1(.exit_group, code);
+                unreachable;
+            }
+            // grandchild: this is pid 1 in the new pidns; continue setup below.
+        }
+
         // Now that uid/gid maps are written, create remaining namespaces
         try self.unshareNamespaces();
 
@@ -374,18 +411,30 @@ pub const Executor = struct {
         // Apply Landlock filesystem restrictions
         if (self.config.enable_landlock) {
             if (self.fs_isolated) {
-                // Chroot/pivot_root mode: restrict within the new root
+                // Chroot/pivot_root mode: restrict within the new root.
+                // OCI's default is rootfs read-write (config.root.readonly:false);
+                // honour that so real workloads can write to their own rootfs.
+                const root_access = if (self.config.rootfs_readonly)
+                    lsm.LANDLOCK_ACCESS_FS_READ_EXEC
+                else
+                    lsm.LANDLOCK_ACCESS_FS_READ_WRITE;
                 const rules = [_]lsm.LandlockPathRule{
-                    .{ .path = "/", .access = lsm.LANDLOCK_ACCESS_FS_READ_EXEC },
+                    .{ .path = "/", .access = root_access },
                     .{ .path = "/tmp", .access = lsm.LANDLOCK_ACCESS_FS_READ_WRITE },
                 };
                 lsm.applyLandlockRulesWithPaths(&rules) catch |err| {
                     log.debug("Landlock unavailable: {s}", .{@errorName(err)});
                 };
             } else {
-                // Chdir fallback mode: restrict to rootfs subtree
+                // Chdir fallback mode: restrict to rootfs subtree.
+                // Same readonly toggle as the pivot_root branch above; default
+                // is rw to match OCI root.readonly: false.
+                const fb_access = if (self.config.rootfs_readonly)
+                    lsm.LANDLOCK_ACCESS_FS_READ_EXEC
+                else
+                    lsm.LANDLOCK_ACCESS_FS_READ_WRITE;
                 const rules = [_]lsm.LandlockPathRule{
-                    .{ .path = self.config.rootfs, .access = lsm.LANDLOCK_ACCESS_FS_READ_EXEC },
+                    .{ .path = self.config.rootfs, .access = fb_access },
                 };
                 lsm.applyLandlockRulesWithPaths(&rules) catch |err| {
                     log.debug("Landlock unavailable: {s}", .{@errorName(err)});

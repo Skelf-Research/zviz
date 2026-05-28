@@ -646,6 +646,15 @@ pub fn defaultContainer() Profile {
             .deny = &container_deny_list,
             .broker = &.{},
         },
+        // Explicit resource limits: without these the cgroup inherits ancestor
+        // limits, which on systemd-managed user slices can include pids.max
+        // values that break multi-process workloads (manifested as ENOMEM on
+        // the second fork). Every other profile in this file sets these; the
+        // omission was a real defect.
+        .resources = .{
+            .pids_max = 512,
+            .memory_max = "2G",
+        },
     };
 }
 

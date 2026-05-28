@@ -886,6 +886,7 @@ pub fn start(allocator: std.mem.Allocator, args: []const []const u8) !void {
     const hostname: ?[]const u8 = if (container.config) |cfg| cfg.hostname else null;
 
     // Build executor config
+    const rootfs_readonly = if (container.config) |cfg| cfg.root.readonly else false;
     const exec_config = executor.ExecConfig{
         .container_id = container_id,
         .rootfs = rootfs,
@@ -898,6 +899,7 @@ pub fn start(allocator: std.mem.Allocator, args: []const []const u8) !void {
         .cgroup_path = cgroup_path,
         .hostname = hostname,
         .verbose = container.verbose,
+        .rootfs_readonly = rootfs_readonly,
     };
 
     // Create and run executor
