@@ -769,11 +769,39 @@ const container_allow_list = [_]i32{
     // epoll
     232, // epoll_wait (older kernels)
     233, // epoll_ctl
+    281, // epoll_pwait
     291, // epoll_create1 (preferred)
+    // additional file metadata + benign syscalls used by real workloads
+    // (identified via strace corpus in the paper's E6 study).
+    58, // vfork
+    85, // creat
+    86, // link
+    88, // symlink
+    90, // chmod
+    91, // fchmod
+    93, // fchown
+    95, // umask
+    98, // getrusage
+    117, // setresuid
+    119, // setresgid
+    125, // capget
+    137, // statfs
+    138, // fstatfs
+    157, // prctl
+    192, // lgetxattr
+    194, // listxattr
+    221, // fadvise64
+    222, // timer_create
+    226, // timer_delete
+    258, // mkdirat
+    280, // utimensat
+    290, // eventfd2
+    332, // statx
+    439, // faccessat2
 };
 
 /// Syscalls denied in containers (dangerous/privilege-escalation)
-const container_deny_list: [22]i32 = .{
+const container_deny_list: [24]i32 = .{
     101, // ptrace
     165, // mount
     166, // umount2
@@ -796,6 +824,11 @@ const container_deny_list: [22]i32 = .{
     173, // ioperm
     248, // add_key
     249, // request_key
+    // io_uring is a significant kernel attack surface and has produced multiple
+    // recent CVEs; Docker's default profile blocks it too. Workloads (e.g. node)
+    // fall back to epoll on EPERM.
+    425, // io_uring_setup
+    426, // io_uring_enter
 };
 
 // ============================================================================
