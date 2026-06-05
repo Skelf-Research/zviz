@@ -1,10 +1,10 @@
 site_name: ZViz Documentation
 site_description: High-performance container isolation runtime with gVisor-grade security
 site_author: ZViz Contributors
-site_url: https://zviz.io/docs
+site_url: https://docs.skelfresearch.com/zviz/
 
-repo_name: zviz/zviz
-repo_url: https://github.com/zviz/zviz
+repo_name: Skelf-Research/zviz
+repo_url: https://github.com/Skelf-Research/zviz
 edit_uri: edit/main/documentation/docs/
 
 theme:
