@@ -1,7 +1,7 @@
 # ZViz
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Platform](https://img.shields.io/badge/platform-Linux-green.svg)](https://github.com/AIntheSky/zviz)
+[![Platform](https://img.shields.io/badge/platform-Linux-green.svg)](https://github.com/Skelf-Research/zviz)
 
 **Container isolation for code you can't trust but have to run.**
 
@@ -12,6 +12,12 @@ are blocked at the seccomp layer before any kernel code runs, and one
 no daemon. The default profile drops all 41 Linux capabilities, applies a
 Landlock ruleset, mounts `/proc`/`/sys`/`/dev` privately in the container, and
 runs the workload as PID 1 of a fresh user + PID + mount + IPC + UTS namespace.
+
+<p align="center">
+  <a href="https://zviz.skelfresearch.com"><b>Website</b></a> •
+  <a href="https://docs.skelfresearch.com/zviz">Documentation</a> •
+  <a href="https://skelfresearch.com">Skelf Research</a>
+</p>
 
 ---
 
@@ -45,7 +51,7 @@ Allowed syscalls execute at native kernel speed. Dangerous syscalls get blocked 
 
 ```bash
 # 1. Build (requires Zig 0.15.0+, Linux 5.13+)
-git clone https://github.com/AIntheSky/zviz.git
+git clone https://github.com/Skelf-Research/zviz.git
 cd zviz && zig build -Doptimize=ReleaseSafe
 
 # 2. (Ubuntu 24.04+) install the AppArmor profile that grants the userns
@@ -195,3 +201,15 @@ Contributions welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
 ## License
 
 Apache License 2.0 - See [LICENSE](LICENSE)
+
+---
+
+## Part of Skelf Research
+
+`zviz` is built by **[Skelf Research](https://skelfresearch.com)** — an independent UK AI research lab publishing production-grade open-source projects.
+
+🌐 [Website](https://zviz.skelfresearch.com) · 📚 [Documentation](https://docs.skelfresearch.com/zviz) · 🔬 [All projects](https://skelfresearch.com/projects) · 🤗 [Hugging Face](https://huggingface.co/skelfresearch)
+
+**Related projects:** [numaperf](https://numaperf.skelfresearch.com) (NUMA-first Rust runtime) · [gpuemu](https://gpuemu.skelfresearch.com) (GPU kernel correctness) · [sigc](https://sigc.skelfresearch.com) (the quant's compiler)
+
+<sub>Released under MIT / Apache-2.0. © Skelf Research Limited.</sub>
